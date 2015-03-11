@@ -19,7 +19,8 @@ module.exports.createApp = function (cfg, cb) {
 	var app = express();
 //	app.use(require("compression")());
 	app.use(cookieParser());
-	app.use(bodyParser.json());
+	app.use(bodyParser.json({ limit: "20mb" }));
+	app.use(bodyParser.raw({ limit: "50mb" })); // to parse getsentry "application/octet-stream" requests
 	app.use(bodyParser.urlencoded({ extended: true }));
 	app.use(multer());
 	var api = {};
