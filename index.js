@@ -6,8 +6,9 @@ var moment = require('moment');
 var cookieParser = require('cookie-parser')
 var bodyParser = require('body-parser');
 var multer = require('multer');
+var lxval = require('lx-valid');
 
-module.exports.CustomError  = function (message, subject) {
+var CustomError = module.exports.CustomError  = function (message, subject) {
   this.constructor.prototype.__proto__ = Error.prototype;
   Error.captureStackTrace(this, this.constructor);
   this.name = this.constructor.name;
@@ -17,7 +18,11 @@ module.exports.CustomError  = function (message, subject) {
 
 module.exports.createApp = function (cfg, cb) {
 	var app = express();
-//	app.use(require("compression")());
+	app.use(function (req, res, next) {
+		req.setMaxListeners(20);
+		next();
+	})
+	app.use(require("compression")());
 	app.use(cookieParser());
 	app.use(bodyParser.json({ limit: "20mb" }));
 	app.use(bodyParser.raw({ limit: "50mb" })); // to parse getsentry "application/octet-stream" requests
@@ -326,6 +331,60 @@ module.exports.obac = function () {
 						_.each(actions, function (a) {
 							_acl.push({m:module, f:face, r:new RegExp(a.replace("*",".*"))})
 						})
+					}
+				}
+			})
+		}
+	}
+}
+
+module.exports.validate = function () {
+	var updater = require("./updater.js");
+	var entries = {};
+	return {
+		reqs:{router:false},
+		init:function (ctx,cb) {
+			cb(null, {
+				api:{
+					register:function (id, obj) {
+						var op = new updater(obj);
+						entries[id] = entries[id] || {};
+						op.update(entries[id])
+					},
+					check:function (id, obj, opts, cb) {
+						var valFn = function (data, schema, opts) {
+							return lxval.validate(data, schema, opts)
+						}
+						if (!cb) {
+							cb = opts;
+							opts = {unknownProperties:"error"};
+						}
+						opts = _.defaults(opts, {unknownProperties:"error"})
+						if (opts.isUpdate) {
+							var op = new updater(obj);
+							var sim = {};
+							op.update(sim);
+							obj = sim;
+							valFn = lxval.getValidationFunction();
+						}
+						var schema = entries[id] || {};
+						var res = valFn(obj, schema, opts);
+						if (!res.valid) {
+							var es = "Validation fails: ";
+							_.each(res.errors, function (error) {
+								es+=error.property + " " + error.message+" ";
+								if (error.expected)
+									es+=", expected  " + JSON.stringify(error.expected);
+								if (error.actual)
+									es+=", actual " + JSON.stringify(error.actual);
+								es+="; ";
+							})
+							var err = new CustomError(es, "InvalidData")
+							err.data = res.errors;
+							safe.back(cb,err)
+						} else {
+							safe.back(cb, null, obj)
+						}
 					}
 				}
 			})
