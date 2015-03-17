@@ -29,6 +29,7 @@ module.exports.createApp = function (cfg, cb) {
 	app.use(bodyParser.urlencoded({ extended: true }));
 	app.use(multer());
 	var api = {};
+	var locals = {};
 	var auto = {};
 	var registered = {};
 	var requested = {};
@@ -58,7 +59,7 @@ module.exports.createApp = function (cfg, cb) {
 				router = express.Router();
 				app.use("/"+module.name,router)
 			}
-			mod.init({api:api,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
+			mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
 				api[module.name]=mobj.api;
 				cb();
 			}))
