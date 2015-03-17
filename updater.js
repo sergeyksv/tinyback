@@ -1,8 +1,11 @@
 var safe = require('safe');
 var _ = require('lodash');
 
-function ensurePath(obj,k,cb) {
-	var path = k.split(".")
+function ensurePath(obj,k,opts,cb) {
+	if (arguments.length==3) {
+		cb = opts; opts = {}
+	}
+	var path = opts.nodots?[k]:k.split(".");
 	var t = null;
 	if (path.length==1)
 		t = obj
@@ -20,14 +23,14 @@ function ensurePath(obj,k,cb) {
 	cb(t,k)
 }
 
-function applySet(obj,$set) {
+function applySet(obj,$set,nested) {
 	_.each($set, function (v,k) {
-		ensurePath(obj,k, function (t,k) {
+		ensurePath(obj,k, {nodots:!!nested}, function (t,k) {
 			// do recursive apply for plain Objects
 			if (_.isPlainObject(v)) {
 				if (!t[k])
 					t[k]={};
-				applySet(t[k],v);
+				applySet(t[k],v,true);
 			}
 			else
 				t[k] = v;
