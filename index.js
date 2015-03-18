@@ -72,7 +72,7 @@ module.exports.createApp = function (cfg, cb) {
 	var dt = new Date();
 	safe.auto(auto, safe.sure(cb, function () {
 		console.log("-> ready in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
-		cb(null, {express:app})
+		cb(null, {express:app,api:api,locals:locals})
 	}))
 }
 
@@ -80,6 +80,8 @@ module.exports.restapi = function () {
 	return {
 		init: function (ctx, cb) {
 			ctx.router.all("/:token/:module/:target",function (req, res) {
+				if (ctx.locals.newrelic)
+					ctx.locals.newrelic.setTransactionName(req.method+"/"+(req.params.token=="public"?"public":"token")+"/"+req.params.module+"/"+req.params.target);
 				var next = function (err) {
 					var statusMap = {"Unauthorized":401,"Access forbidden":403};
 					var code = statusMap[err.subject] || 500;
