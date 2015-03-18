@@ -35,9 +35,6 @@ module.exports.createApp = function (cfg, cb) {
 	var requested = {};
 
 	_.each(cfg.modules, function (module) {
-
-		app.use(require("compression")());
-		console.log("loading "+module.name);
 		registered[module.name]=1;
 		var mod = module.object || null;
 		if (module.require) {
@@ -59,7 +56,10 @@ module.exports.createApp = function (cfg, cb) {
 				router = express.Router();
 				app.use("/"+module.name,router)
 			}
+			var dt = new Date();
 			mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
+				console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
+
 				api[module.name]=mobj.api;
 				cb();
 			}))
@@ -69,8 +69,9 @@ module.exports.createApp = function (cfg, cb) {
 	var missing = _.difference(_.keys(requested),_.keys(registered));
 	if (missing.length)
 		return safe.back(cb, new Error("Missing module dependancies: " + missing.join(',')))
+	var dt = new Date();
 	safe.auto(auto, safe.sure(cb, function () {
-		console.log("-> ready");
+		console.log("-> ready in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
 		cb(null, {express:app})
 	}))
 }
