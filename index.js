@@ -289,7 +289,7 @@ module.exports.obac = function () {
 				api:{
 					getPermissions:function (t, p, cb) {
 						var result = {};
-						safe.each(p.rules, function (rule, cb) {
+						safe.forEachOf(p.rules, function (rule, cb) {
 							var acl = _.filter(_acl, function (a) {
 								return a.r.test(rule.action);
 							})
