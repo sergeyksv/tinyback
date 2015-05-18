@@ -432,3 +432,58 @@ module.exports.validate = function () {
 		}
 	};
 };
+
+module.exports.mongocache = function () {
+	var entries = {};
+	return {
+		reqs:{router:false},
+		init:function (ctx,cb) {
+            ctx.api.mongo.getDb({}, safe.sure(cb, function (db) {
+    			cb(null, {
+    				api:{
+    					register:function (id, opts, cb) {
+                            db.collection("cache_"+id, safe.sure(cb, function (col) {
+                                var options = {};
+                                if (opts.maxAge) {
+                                    options.expireAfterSeconds = 3600;
+                                }
+                                ctx.api.mongo.ensureIndex(col,{k:1},options,safe.sure(cb, function () {
+                                    console.log("here");
+                                    entries["cache_"+id] = col;
+                                    cb();
+                                }));
+                            }));
+    					},
+    					set:function (id,k,v,cb) {
+                            console.log("get",arguments);
+                            var col = entries["cache_"+id];
+                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+                            col.update({k:k.toString()},{$set:{v:v}},{upsert:true},cb);
+                        },
+                        get:function (id,k,cb) {
+                            console.log("set",arguments);
+                            var col = entries["cache_"+id];
+                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+                            col.findOne({k:k.toString()},cb);
+                        },
+                        has:function (id,k,cb) {
+                            var col = entries["cache_"+id];
+                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+                            col.find({k:k.toString()}).limit(1).count(cb);
+                        },
+                        unset:function (id,k,cb) {
+                            var col = entries["cache_"+id];
+                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+                            col.remove({k:k.toString()},cb);
+                        },
+                        reset:function (id, cb) {
+                            var col = entries["cache_"+id];
+                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+                            col.remove({},cb);
+                        }
+                    }
+    			});
+            }));
+		}
+	};
+};
