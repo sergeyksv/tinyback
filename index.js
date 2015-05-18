@@ -448,23 +448,25 @@ module.exports.mongocache = function () {
                                     options.expireAfterSeconds = 3600;
                                 }
                                 ctx.api.mongo.ensureIndex(col,{k:1},options,safe.sure(cb, function () {
-                                    console.log("here");
                                     entries["cache_"+id] = col;
                                     cb();
                                 }));
                             }));
     					},
     					set:function (id,k,v,cb) {
-                            console.log("get",arguments);
                             var col = entries["cache_"+id];
                             if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
                             col.update({k:k.toString()},{$set:{v:v}},{upsert:true},cb);
                         },
                         get:function (id,k,cb) {
-                            console.log("set",arguments);
                             var col = entries["cache_"+id];
                             if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.findOne({k:k.toString()},cb);
+                            col.findOne({k:k.toString()},safe.sure(cb, function (rec) {
+                                if (!rec)
+                                    cb(null,null);
+                                else
+                                    cb(null,rec.v);
+                            }));
                         },
                         has:function (id,k,cb) {
                             var col = entries["cache_"+id];
