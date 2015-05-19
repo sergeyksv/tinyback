@@ -8,6 +8,7 @@ var cookieParser = require('cookie-parser');
 var bodyParser = require('body-parser');
 var multer = require('multer');
 var lxval = require('lx-valid');
+var crypto = require('crypto');
 
 var CustomError = module.exports.CustomError  = function (message, subject) {
   this.constructor.prototype.__proto__ = Error.prototype;
@@ -435,6 +436,15 @@ module.exports.validate = function () {
 
 module.exports.mongocache = function () {
 	var entries = {};
+    var safeKey = function (key) {
+        var sKey = key.toString();
+        if (sKey.length>512) {
+            md5sum = crypto.createHash('md5');
+            md5sum.update(sKey);
+            sKey = md5sum.digest('hex');
+        }
+        return sKey;
+    };
 	return {
 		reqs:{router:false},
 		init:function (ctx,cb) {
@@ -442,6 +452,9 @@ module.exports.mongocache = function () {
     			cb(null, {
     				api:{
     					register:function (id, opts, cb) {
+                            var col = entries["cache_"+id];
+                            if (col)
+                                return safe.back(cb,new Error("Cache "+id+" is already registered"));                            
                             db.collection("cache_"+id, safe.sure(cb, function (col) {
                                 var options = {};
                                 if (opts.maxAge) {
@@ -456,27 +469,27 @@ module.exports.mongocache = function () {
     					set:function (id,k,v,cb) {
                             var col = entries["cache_"+id];
                             if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.update({k:k.toString()},{$set:{v:v}},{upsert:true},cb);
+                            col.update({k:safeKey(k)},{$set:{v:JSON.stringify(v)}},{upsert:true},cb);
                         },
                         get:function (id,k,cb) {
                             var col = entries["cache_"+id];
                             if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.findOne({k:k.toString()},safe.sure(cb, function (rec) {
+                            col.findOne({k:safeKey(k)},safe.sure(cb, function (rec) {
                                 if (!rec)
                                     cb(null,null);
                                 else
-                                    cb(null,rec.v);
+                                    cb(null,JSON.parse(rec.v));
                             }));
                         },
                         has:function (id,k,cb) {
                             var col = entries["cache_"+id];
                             if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.find({k:k.toString()}).limit(1).count(cb);
+                            col.find({k:safeKey(k)}).limit(1).count(cb);
                         },
                         unset:function (id,k,cb) {
                             var col = entries["cache_"+id];
                             if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.remove({k:k.toString()},cb);
+                            col.remove({k:safeKey(k)},cb);
                         },
                         reset:function (id, cb) {
                             var col = entries["cache_"+id];
