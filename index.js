@@ -366,7 +366,7 @@ module.exports.obac = function () {
 							}
 						});
 						safe.parallel(checks, safe.sure(cb, function (answers) {
-							cb(null, _.intersection.apply(_,answers));
+							cb(null, answers.length==1?answers[0]:_.intersection.apply(_,answers));
 						}));
 					},
 					register:function(actions, module, face) {
@@ -454,7 +454,7 @@ module.exports.mongocache = function () {
     					register:function (id, opts, cb) {
                             var col = entries["cache_"+id];
                             if (col)
-                                return safe.back(cb,new Error("Cache "+id+" is already registered"));                            
+                                return safe.back(cb,new Error("Cache "+id+" is already registered"));
                             db.collection("cache_"+id, safe.sure(cb, function (col) {
                                 var options = {};
                                 if (opts.maxAge) {
