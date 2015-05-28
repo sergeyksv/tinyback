@@ -116,7 +116,7 @@ module.exports.restapi = function () {
 						res.header('Pragma', 'no-cache');
 					}
 
-					res.json(result);
+					res.json(_.isUndefined(result)?null:result);
 				}));
 			});
 			cb(null, {
