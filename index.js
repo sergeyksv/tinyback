@@ -340,9 +340,11 @@ module.exports.obac = function () {
 								}
 							});
 							safe.parallel(checks, safe.sure(cb, function (answers) {
-								var answer = null;
+								var answer = false;
+                                // if any arbiter allow some action then
+                                // we consider it allowed (or check)
 								_.each(answers, function (voice) {
-									answer = (!answer)?voice:(answer?voice:answer);
+									answer |= voice;
 								});
 								if (!result[rule.action])
 									result[rule.action] = {};
