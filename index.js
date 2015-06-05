@@ -128,116 +128,10 @@ module.exports.restapi = function () {
 };
 
 module.exports.prefixify = function () {
-	var translate = {
-		"_i_": function (pr) {
-			if (!isNaN(parseInt(pr)))
-				return parseInt(pr);
-		},
-		"_s_": function (pr) {
-			return pr.toString();
-		},
-		"_f_": function (pr) {
-			if (!isNaN(parseFloat(pr)))
-				return parseFloat(pr);
-		},
-		"_t_": function (pr) {
-		},
-		"_dt": function (pr) {
-			var t = Date.parse(pr);
-			if (!isNaN(t))
-				return new Date(t);
-			else if (!isNaN(parseInt(pr)))
-				return new Date(parseInt(pr));
-			else if (pr instanceof Date)
-				return pr;
-		},
-		"_b_": function (pr) {
-			if (_.contains([true,"true",1,"1"], pr))
-				return 1;
-			if (_.contains([false,"false",0,"0",null,"null",""], pr))
-				return 0;
-		}
-	};
-
-	function queryfix(obj, opts) {
-		if (!obj) return null;
-		var nobj = {};
-		_.each(obj, function (v, k) {
-			// query can use dot notation for names
-			// last component should refer to actual type
-			var prefix = k.match(/(_..).*$/);
-			if (prefix)
-				prefix = prefix[1];
-
-			if (prefix && translate[prefix]) {
-				// object meand op, like {$gt:5,$lt:8}
-				if (_.isPlainObject(v)) {
-					var no = {};
-					_.each(v, function (val, op) {
-						// op value is array {$in:[1,2,4]}
-						if (_.isArray(val)) {
-							var na = [];
-							_.each(val, function (a) {
-								try { na.push(translate[prefix](a)); } catch (e) {}
-							});
-							no[op]=na;
-						} else {
-							try { no[op] = translate[prefix](val); } catch (e) {}
-						}
-					});
-					nobj[k]=no;
-				} else {
-					// plain value then
-					try { nobj[k] = translate[prefix](v); } catch (e) {}
-				}
-			} else {
-				if (_.isPlainObject(v))
-					nobj[k]=queryfix(v,opts);
-				else
-					nobj[k]=v;
-			}
-		});
-		return nobj;
-	}
-
-	function datafix(obj,opts) {
-		var nobj = obj;
-		_.each(obj, function (v, k) {
-			if (_.isFunction(v))
-				return;
-
-			var prefix = null;
-			if (k.length > 2 && k[0] == "_")
-				prefix = k.substr(0,3);
-
-			if (prefix && translate[prefix]) {
-				var nv;
-				try { nv = translate[prefix](v); } catch (e) {}
-				if (_.isUndefined(nv)) {
-					if (opts && opts.strict)
-						throw new Error("Wrong field format: "+k);
-					delete nobj[k];
-				} else if (nv!==v)
-					nobj[k] = nv;
-			} else if (_.isObject(v) || _.isArray(v)) {
-				datafix(v,opts);
-			}
-		});
-		return nobj;
-	}
-
 	return {
 		reqs:{router:false},
 		init:function (ctx,cb) {
-			cb(null, {
-				api:{
-					queryfix:queryfix,
-					datafix:datafix,
-					register:function (prefix, transform) {
-						translate[prefix]=transform;
-					}
-				}
-			});
+			cb(null, {api:require('./prefixify')});
 		}
 	};
 };
@@ -245,6 +139,7 @@ module.exports.prefixify = function () {
 module.exports.mongodb = function () {
 	return {
 		reqs:{router:false},
+        deps:['prefixify'],
 		init:function (ctx,cb) {
 			var mongo = require("mongodb");
 			ctx.api.prefixify.register("_id",function (pr) {
@@ -252,7 +147,7 @@ module.exports.mongodb = function () {
 			});
 
 			var dbcache = {};
-            var indexinfo = {};
+			var indexinfo = {};
 			cb(null, {
 				api:{
 					getDb:function (prm,cb) {
@@ -277,41 +172,41 @@ module.exports.mongodb = function () {
 							cb(null,db);
 						}));
 					},
-                    ensureIndex:function (col, index, options, cb) {
-                        if (_.isFunction(options)) {
-                            cb = options;
-                            options = {};
-                        }
+					ensureIndex:function (col, index, options, cb) {
+						if (_.isFunction(options)) {
+							cb = options;
+							options = {};
+						}
 
-                        var dbkey = col.db.serverConfig.name+"/"+col.db.databaseName;
-                        var dbif = indexinfo[dbkey];
-                        if (!dbif) {
-                            dbif = indexinfo[dbkey]={};
-                        }
-                        var colkey = col.collectionName;
-                        var cif = dbif[colkey];
-                        if (!cif) {
-                            cif = dbif[colkey]={_id_:true};
-                        }
-                        col.ensureIndex(index, options, safe.sure(cb, function (indexname) {
-                            cif[indexname]=true;
-                            cb();
-                        }));
-                    },
-                    dropUnusedIndexes:function (db, cb) {
-                        var dbkey = db.serverConfig.name+"/"+db.databaseName;
-                        var dbif = indexinfo[dbkey];
-                        if (!dbif)
-                            return safe.back(cb, null);
-                        safe.each(_.keys(dbif), function (colName, cb) {
-                            db.indexInformation(colName, safe.sure(cb, function (index) {
-                                var unused = _.difference(_.keys(index),_.keys(dbif[colName]));
-                                safe.each(unused, function (indexName,cb) {
-                                    db.dropIndex(colName, indexName, cb);
-                                },cb);
-                            }));
-                        },cb);
-                    }
+						var dbkey = col.db.serverConfig.name+"/"+col.db.databaseName;
+						var dbif = indexinfo[dbkey];
+						if (!dbif) {
+							dbif = indexinfo[dbkey]={};
+						}
+						var colkey = col.collectionName;
+						var cif = dbif[colkey];
+						if (!cif) {
+							cif = dbif[colkey]={_id_:true};
+						}
+						col.ensureIndex(index, options, safe.sure(cb, function (indexname) {
+							cif[indexname]=true;
+							cb();
+						}));
+					},
+					dropUnusedIndexes:function (db, cb) {
+						var dbkey = db.serverConfig.name+"/"+db.databaseName;
+						var dbif = indexinfo[dbkey];
+						if (!dbif)
+							return safe.back(cb, null);
+						safe.each(_.keys(dbif), function (colName, cb) {
+							db.indexInformation(colName, safe.sure(cb, function (index) {
+								var unused = _.difference(_.keys(index),_.keys(dbif[colName]));
+								safe.each(unused, function (indexName,cb) {
+									db.dropIndex(colName, indexName, cb);
+								},cb);
+							}));
+						},cb);
+					}
 				}
 			});
 		}
@@ -341,8 +236,8 @@ module.exports.obac = function () {
 							});
 							safe.parallel(checks, safe.sure(cb, function (answers) {
 								var answer = false;
-                                // if any arbiter allow some action then
-                                // we consider it allowed (or check)
+								// if any arbiter allow some action then
+								// we consider it allowed (or check)
 								_.each(answers, function (voice) {
 									answer |= voice;
 								});
@@ -438,69 +333,70 @@ module.exports.validate = function () {
 
 module.exports.mongocache = function () {
 	var entries = {};
-    var safeKey = function (key) {
-        var sKey = key.toString();
-        if (sKey.length>512) {
-            md5sum = crypto.createHash('md5');
-            md5sum.update(sKey);
-            sKey = md5sum.digest('hex');
-        }
-        return sKey;
-    };
+	var safeKey = function (key) {
+		var sKey = key.toString();
+		if (sKey.length>512) {
+			md5sum = crypto.createHash('md5');
+			md5sum.update(sKey);
+			sKey = md5sum.digest('hex');
+		}
+		return sKey;
+	};
 	return {
 		reqs:{router:false},
+        deps:["mongo"],
 		init:function (ctx,cb) {
-            ctx.api.mongo.getDb({}, safe.sure(cb, function (db) {
-    			cb(null, {
-    				api:{
-    					register:function (id, opts, cb) {
-                            var col = entries["cache_"+id];
-                            if (col)
-                                return safe.back(cb,new Error("Cache "+id+" is already registered"));
-                            db.collection("cache_"+id, safe.sure(cb, function (col) {
-                                var options = {};
-                                if (opts.maxAge) {
-                                    options.expireAfterSeconds = 3600;
-                                }
-                                ctx.api.mongo.ensureIndex(col,{k:1},options,safe.sure(cb, function () {
-                                    entries["cache_"+id] = col;
-                                    cb();
-                                }));
-                            }));
-    					},
-    					set:function (id,k,v,cb) {
-                            var col = entries["cache_"+id];
-                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.update({k:safeKey(k)},{$set:{v:JSON.stringify(v)}},{upsert:true},cb);
-                        },
-                        get:function (id,k,cb) {
-                            var col = entries["cache_"+id];
-                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.findOne({k:safeKey(k)},safe.sure(cb, function (rec) {
-                                if (!rec)
-                                    cb(null,null);
-                                else
-                                    cb(null,JSON.parse(rec.v));
-                            }));
-                        },
-                        has:function (id,k,cb) {
-                            var col = entries["cache_"+id];
-                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.find({k:safeKey(k)}).limit(1).count(cb);
-                        },
-                        unset:function (id,k,cb) {
-                            var col = entries["cache_"+id];
-                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.remove({k:safeKey(k)},cb);
-                        },
-                        reset:function (id, cb) {
-                            var col = entries["cache_"+id];
-                            if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-                            col.remove({},cb);
-                        }
-                    }
-    			});
-            }));
+			ctx.api.mongo.getDb({}, safe.sure(cb, function (db) {
+				cb(null, {
+					api:{
+						register:function (id, opts, cb) {
+							var col = entries["cache_"+id];
+							if (col)
+								return safe.back(cb,new Error("Cache "+id+" is already registered"));
+							db.collection("cache_"+id, safe.sure(cb, function (col) {
+								var options = {};
+								if (opts.maxAge) {
+									options.expireAfterSeconds = 3600;
+								}
+								ctx.api.mongo.ensureIndex(col,{k:1},options,safe.sure(cb, function () {
+									entries["cache_"+id] = col;
+									cb();
+								}));
+							}));
+						},
+						set:function (id,k,v,cb) {
+							var col = entries["cache_"+id];
+							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+							col.update({k:safeKey(k)},{$set:{v:JSON.stringify(v)}},{upsert:true},cb);
+						},
+						get:function (id,k,cb) {
+							var col = entries["cache_"+id];
+							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+							col.findOne({k:safeKey(k)},safe.sure(cb, function (rec) {
+								if (!rec)
+									cb(null,null);
+								else
+									cb(null,JSON.parse(rec.v));
+							}));
+						},
+						has:function (id,k,cb) {
+							var col = entries["cache_"+id];
+							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+							col.find({k:safeKey(k)}).limit(1).count(cb);
+						},
+						unset:function (id,k,cb) {
+							var col = entries["cache_"+id];
+							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+							col.remove({k:safeKey(k)},cb);
+						},
+						reset:function (id, cb) {
+							var col = entries["cache_"+id];
+							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
+							col.remove({},cb);
+						}
+					}
+				});
+			}));
 		}
 	};
 };
