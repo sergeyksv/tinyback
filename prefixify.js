@@ -35,6 +35,14 @@ define(["module","lodash"],function (module,_) {
 		}
 	};
 
+	function sortfix(obj) {
+		var nobj = {};
+		_.each(obj, function (v, k) {
+			nobj[k] = parseInt(v);
+		});
+		return nobj;
+	}
+
 	function queryfix(obj, opts) {
 		if (!obj) return null;
 		var nobj = {};
@@ -107,6 +115,7 @@ define(["module","lodash"],function (module,_) {
 		datafix:datafix,
 		data:datafix,
 		query:queryfix,
+		sort:sortfix,
 		register:function (prefix, transform) {
 			translate[prefix]=transform;
 		}
