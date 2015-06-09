@@ -80,6 +80,7 @@ module.exports.createApp = function (cfg, cb) {
 
 module.exports.restapi = function () {
 	return {
+        deps:['tson'],
 		init: function (ctx, cb) {
 			ctx.router.all("/:token/:module/:target",function (req, res) {
 				if (ctx.locals.newrelic)
@@ -95,7 +96,16 @@ module.exports.restapi = function () {
 				if (!ctx.api[req.params.module][req.params.target])
 					throw new Error("No function available");
 
+                var params = (req.method == 'POST')?req.body:req.query;
+
+                if (req.query._t_son=='in' || req.query._t_son=='both')
+                    params = ctx.api.tson.decode(params);
+
 				ctx.api[req.params.module][req.params.target](req.params.token, (req.method == 'POST')?req.body:req.query, safe.sure(next, function (result) {
+
+                    if (req.query._t_son=='out' || req.query._t_son=='both')
+                        result = ctx.api.tson.encode(result);
+
 					var maxAge = 0;
 					if (req.query._t_age) {
 						var age = req.query._t_age;
@@ -132,6 +142,15 @@ module.exports.prefixify = function () {
 		reqs:{router:false},
 		init:function (ctx,cb) {
 			cb(null, {api:require('./prefixify')});
+		}
+	};
+};
+
+module.exports.tson = function () {
+	return {
+		reqs:{router:false},
+		init:function (ctx,cb) {
+			cb(null, {api:require('./tson')});
 		}
 	};
 };
