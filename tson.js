@@ -2,6 +2,10 @@ if (typeof define !== 'function') { var define = require('amdefine')(module); }
 
 define(["module","lodash"],function (module,_) {
     function encode(obj, copy) {
+        var wrap = !(_.isPlainObject(obj) || _.isArray(obj));
+        if (wrap)
+            obj = [obj];
+
         var dst = copy?(_.isArray(obj)?[]:{}):obj;
         _.each(obj, function (v,k) {
             var nv;
@@ -14,9 +18,14 @@ define(["module","lodash"],function (module,_) {
             else if (copy)
                 dst[k]= v;
         });
-        return dst;
+        return wrap?dst[0]:dst;
     }
+
     function decode(obj,copy) {
+        var wrap = !(_.isPlainObject(obj) || _.isArray(obj));
+        if (wrap)
+            obj = [obj];
+
         var dst = copy?(_.isArray(obj)?[]:{}):obj;
         _.each(obj, function (v,k) {
             var nv;
@@ -33,7 +42,7 @@ define(["module","lodash"],function (module,_) {
             } else if (copy)
                 dst[k]= v;
         });
-        return dst;
+        return wrap?dst[0]:dst;
     }
 
     return {

@@ -239,6 +239,15 @@ module.exports.obac = function () {
 			var _acl = [];
 			cb(null, {
 				api:{
+                    getPermission: function (t, p, cb) {
+                        ctx.api.obac.getPermissions(t, {rules:[p]}, safe.sure(cb, function (res) {
+                            var granted = !!res[p.action][p._id ||'global'];
+                            if (!p.throw)
+                                cb(null, granted);
+                            else
+                                cb(granted?null:new CustomError("Access denied to "+p.action, "Unauthorized"));
+                        }));
+                    },
 					getPermissions:function (t, p, cb) {
 						var result = {};
 						safe.forEachOf(p.rules, function (rule, cb) {
