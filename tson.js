@@ -31,7 +31,7 @@ define(["module","lodash"],function (module,_) {
             var nv;
             if (_.isPlainObject(v)) {
                 if (v.$tson && v.$tson=='date')
-                    obj[k] = new Date(v.v);
+                    obj[k] = new Date(parseInt(v.v));
                 else {
                     nv = decode(v,copy);
                     if (copy) dst[k] = nv;
