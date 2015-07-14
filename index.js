@@ -18,6 +18,32 @@ var CustomError = module.exports.CustomError  = function (message, subject) {
   this.subject = subject;
 };
 
+/**
+ * @property {Object} invalid validation result object
+ * @type {Function}
+ */
+var ValidationError = module.exports.ValidationError = function (invalid) {
+	this.constructor.prototype.__proto__ = Error.prototype;
+	var es = "Validation fails: ";
+
+	_.each(invalid.errors, function (error) {
+		es += error.property + " " + error.message + " ";
+		if (error.expected)
+			es += ", expected  " + JSON.stringify(error.expected);
+		if (error.actual)
+			es += ", actual " + JSON.stringify(error.actual);
+		es += "; ";
+	});
+
+	this.name = 'ValidationError';
+	this.message = es;
+	this.subject = 'Invalid Data';
+	this.data = _.reduce(invalid.errors, function (m, f) {
+		m.push(_.pick(f, ['property', 'message']));
+		return m;
+	},[]);
+};
+
 module.exports.createApp = function (cfg, cb) {
 	var app = express();
 	app.use(function (req, res, next) {
@@ -86,10 +112,9 @@ module.exports.restapi = function () {
 				if (ctx.locals.newrelic)
 					ctx.locals.newrelic.setTransactionName(req.method+"/"+(req.params.token=="public"?"public":"token")+"/"+req.params.module+"/"+req.params.target);
 				var next = function (err) {
-					var statusMap = {"Unauthorized":401,"Access forbidden":403};
+					var statusMap = {"Unauthorized":401,"Access forbidden":403,"Invalid Data":422};
 					var code = statusMap[err.subject] || 500;
-
-					res.status(code).json(_.pick({message: err.message, subject: err.subject}, _.isString));
+					res.status(code).json(_.pick(err,['message','subject','data']));
 				};
 				if (!ctx.api[req.params.module])
 					throw new Error("No api module available");
@@ -97,7 +122,7 @@ module.exports.restapi = function () {
 					throw new Error("No function available");
 
                 var params = (req.method == 'POST')?req.body:req.query;
-
+				
                 if (req.query._t_son=='in' || req.query._t_son=='both')
                     params = ctx.api.tson.decode(params);
 
@@ -337,18 +362,7 @@ module.exports.validate = function () {
 						var schema = entries[id] || {};
 						var res = valFn(obj, schema, opts);
 						if (!res.valid) {
-							var es = "Validation fails: ";
-							_.each(res.errors, function (error) {
-								es+=error.property + " " + error.message+" ";
-								if (error.expected)
-									es+=", expected  " + JSON.stringify(error.expected);
-								if (error.actual)
-									es+=", actual " + JSON.stringify(error.actual);
-								es+="; ";
-							});
-							var err = new CustomError(es, "InvalidData");
-							err.data = res.errors;
-							safe.back(cb,err);
+							safe.back(cb, new ValidationError(res));
 						} else {
 							safe.back(cb, null, obj);
 						}
