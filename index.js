@@ -213,7 +213,11 @@ module.exports.mongodb = function () {
 						);
 						dbc.open(safe.sure(cb, function (db) {
 							dbcache[name]=db;
-							cb(null,db);
+              if(!cfg.auth)
+                return cb(null,db);
+              db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+                cb(null,db);
+              }))
 						}));
 					},
 					ensureIndex:function (col, index, options, cb) {
