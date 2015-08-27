@@ -317,6 +317,7 @@ module.exports.validate = function () {
 		init:function (ctx,cb) {
 			cb(null, {
 				api:{
+					async: lxval.asyncValidate,
 					register:function (id, obj) {
 						var op = new updater(obj);
 						entries[id] = entries[id] || {};
