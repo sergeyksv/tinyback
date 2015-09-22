@@ -122,7 +122,7 @@ module.exports.restapi = function () {
 					throw new Error("No function available");
 
                 var params = (req.method == 'POST')?req.body:req.query;
-				
+
                 if (req.query._t_son=='in' || req.query._t_son=='both')
                     params = ctx.api.tson.decode(params);
 
@@ -402,9 +402,7 @@ module.exports.mongocache = function () {
 								return safe.back(cb,new Error("Cache "+id+" is already registered"));
 							db.collection("cache_"+id, safe.sure(cb, function (col) {
 								var options = {};
-								if (opts.maxAge) {
-									options.expireAfterSeconds = 3600;
-								}
+								options.expireAfterSeconds = opts.maxAge || 3600;
 								ctx.api.mongo.ensureIndex(col,{k:1},options,safe.sure(cb, function () {
 									entries["cache_"+id] = col;
 									cb();
