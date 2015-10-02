@@ -106,7 +106,7 @@ module.exports.createApp = function (cfg, cb) {
 
 module.exports.restapi = function () {
 	return {
-        deps:['tson'],
+		deps:['tson'],
 		init: function (ctx, cb) {
 			ctx.router.all("/:token/:module/:target",function (req, res) {
 				if (ctx.locals.newrelic)
@@ -121,15 +121,15 @@ module.exports.restapi = function () {
 				if (!ctx.api[req.params.module][req.params.target])
 					throw new Error("No function available");
 
-                var params = (req.method == 'POST')?req.body:req.query;
+				var params = (req.method == 'POST')?req.body:req.query;
 
-                if (req.query._t_son=='in' || req.query._t_son=='both')
-                    params = ctx.api.tson.decode(params);
+				if (req.query._t_son=='in' || req.query._t_son=='both')
+					params = ctx.api.tson.decode(params);
 
 				ctx.api[req.params.module][req.params.target](req.params.token, (req.method == 'POST')?req.body:req.query, safe.sure(next, function (result) {
 
-                    if (req.query._t_son=='out' || req.query._t_son=='both')
-                        result = ctx.api.tson.encode(result);
+					if (req.query._t_son=='out' || req.query._t_son=='both')
+						result = ctx.api.tson.encode(result);
 
 					var maxAge = 0;
 					if (req.query._t_age) {
@@ -183,7 +183,7 @@ module.exports.tson = function () {
 module.exports.mongodb = function () {
 	return {
 		reqs:{router:false},
-        deps:['prefixify'],
+		deps:['prefixify'],
 		init:function (ctx,cb) {
 			var mongo = require("mongodb");
 			ctx.api.prefixify.register("_id",function (pr) {
@@ -213,11 +213,11 @@ module.exports.mongodb = function () {
 						);
 						dbc.open(safe.sure(cb, function (db) {
 							dbcache[name]=db;
-              if(!cfg.auth)
-                return cb(null,db);
-              db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
-                cb(null,db);
-              }))
+			  if(!cfg.auth)
+				return cb(null,db);
+			  db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+				cb(null,db);
+			  }))
 						}));
 					},
 					ensureIndex:function (col, index, options, cb) {
@@ -268,15 +268,15 @@ module.exports.obac = function () {
 			var _acl = [];
 			cb(null, {
 				api:{
-                    getPermission: function (t, p, cb) {
-                        ctx.api.obac.getPermissions(t, {rules:[p]}, safe.sure(cb, function (res) {
-                            var granted = !!res[p.action][p._id ||'global'];
-                            if (!p.throw)
-                                cb(null, granted);
-                            else
-                                cb(granted?null:new CustomError("Access denied to "+p.action, "Unauthorized"));
-                        }));
-                    },
+					getPermission: function (t, p, cb) {
+						ctx.api.obac.getPermissions(t, {rules:[p]}, safe.sure(cb, function (res) {
+							var granted = !!res[p.action][p._id ||'global'];
+							if (!p.throw)
+								cb(null, granted);
+							else
+								cb(granted?null:new CustomError("Access denied to "+p.action, "Unauthorized"));
+						}));
+					},
 					getPermissions:function (t, p, cb) {
 						var result = {};
 						safe.forEachOf(p.rules, function (rule, cb) {
@@ -391,19 +391,19 @@ module.exports.mongocache = function () {
 	};
 	return {
 		reqs:{router:false},
-        deps:["mongo"],
+		deps:["mongo"],
 		init:function (ctx,cb) {
 			ctx.api.mongo.getDb({}, safe.sure(cb, function (db) {
 				cb(null, {
 					api:{
 						register:function (id, opts, cb) {
+							if (id.indexOf("/")!=-1)
+								return safe.back(cb,new Error("Found not allowed characters in cache id"));
 							var col = entries["cache_"+id];
 							if (col)
 								return safe.back(cb,new Error("Cache "+id+" is already registered"));
 							db.collection("cache_"+id, safe.sure(cb, function (col) {
-								var options = {};
-								options.expireAfterSeconds = opts.maxAge || 3600;
-								ctx.api.mongo.ensureIndex(col,{k:1},options,safe.sure(cb, function () {
+								ctx.api.mongo.ensureIndex(col,{d:1},{expireAfterSeconds: opts.maxAge || 3600},safe.sure(cb, function () {
 									entries["cache_"+id] = col;
 									cb();
 								}));
@@ -412,12 +412,12 @@ module.exports.mongocache = function () {
 						set:function (id,k,v,cb) {
 							var col = entries["cache_"+id];
 							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-							col.update({k:safeKey(k)},{$set:{v:JSON.stringify(v)}},{upsert:true},cb);
+							col.update({_id:safeKey(k)},{$set:{d:new Date(),v:JSON.stringify(v)}},{upsert:true},cb);
 						},
 						get:function (id,k,cb) {
 							var col = entries["cache_"+id];
 							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-							col.findOne({k:safeKey(k)},safe.sure(cb, function (rec) {
+							col.findOne({_id:safeKey(k)},safe.sure(cb, function (rec) {
 								if (!rec)
 									cb(null,null);
 								else
@@ -427,12 +427,12 @@ module.exports.mongocache = function () {
 						has:function (id,k,cb) {
 							var col = entries["cache_"+id];
 							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-							col.find({k:safeKey(k)}).limit(1).count(cb);
+							col.find({_id:safeKey(k)}).limit(1).count(cb);
 						},
 						unset:function (id,k,cb) {
 							var col = entries["cache_"+id];
 							if (!col) return safe.back(cb,new Error("Cache "+id+" is not registered"));
-							col.remove({k:safeKey(k)},cb);
+							col.remove({_id:safeKey(k)},cb);
 						},
 						reset:function (id, cb) {
 							var col = entries["cache_"+id];
