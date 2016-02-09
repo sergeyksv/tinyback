@@ -54,7 +54,7 @@ module.exports.createApp = function (cfg, cb) {
 	app.use(cookieParser());
 	app.use(bodyParser.json({ limit: "20mb" }));
 	app.use(bodyParser.raw({ limit: "50mb" })); // to parse getsentry "application/octet-stream" requests
-	app.use(bodyParser.urlencoded({ extended: true }));
+	app.use(bodyParser.urlencoded({ extended: true, limit: "20mb"}));
 	app.use(multer());
 	var api = {};
 	var locals = {};
@@ -87,7 +87,6 @@ module.exports.createApp = function (cfg, cb) {
 			var dt = new Date();
 			mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
 				console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
-
 				api[module.name]=mobj.api;
 				cb();
 			}));
