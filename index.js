@@ -52,9 +52,9 @@ module.exports.createApp = function (cfg, cb) {
 	});
 	app.use(require("compression")());
 	app.use(cookieParser());
-	app.use(bodyParser.json({ limit: "20mb" }));
-	app.use(bodyParser.raw({ limit: "50mb" })); // to parse getsentry "application/octet-stream" requests
-	app.use(bodyParser.urlencoded({ extended: true, limit: "20mb"}));
+	app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
+	app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
+	app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
 	app.use(multer());
 	var api = {};
 	var locals = {};
