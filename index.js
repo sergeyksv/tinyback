@@ -10,12 +10,12 @@ var multer = require('multer');
 var lxval = require('lx-valid');
 var crypto = require('crypto');
 
-var CustomError = module.exports.CustomError  = function (message, subject) {
-  this.constructor.prototype.__proto__ = Error.prototype;
-  Error.captureStackTrace(this, this.constructor);
-  this.name = this.constructor.name;
-  this.message = message;
-  this.subject = subject;
+var CustomError = module.exports.CustomError	= function (message, subject) {
+	this.constructor.prototype.__proto__ = Error.prototype;
+	Error.captureStackTrace(this, this.constructor);
+	this.name = this.constructor.name;
+	this.message = message;
+	this.subject = subject;
 };
 
 /**
@@ -29,7 +29,7 @@ var ValidationError = module.exports.ValidationError = function (invalid) {
 	_.each(invalid.errors, function (error) {
 		es += error.property + " " + error.message + " ";
 		if (error.expected)
-			es += ", expected  " + JSON.stringify(error.expected);
+			es += ", expected	" + JSON.stringify(error.expected);
 		if (error.actual)
 			es += ", actual " + JSON.stringify(error.actual);
 		es += "; ";
@@ -127,7 +127,6 @@ module.exports.restapi = function () {
 					params = ctx.api.tson.decode(params);
 
 				ctx.api[req.params.module][req.params.target](req.params.token, (req.method == 'POST')?req.body:req.query, safe.sure(next, function (result) {
-
 					if (req.query._t_son=='out' || req.query._t_son=='both')
 						result = ctx.api.tson.encode(result);
 
