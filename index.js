@@ -213,11 +213,11 @@ module.exports.mongodb = function () {
 						);
 						dbc.open(safe.sure(cb, function (db) {
 							dbcache[name]=db;
-			  if(!cfg.auth)
-				return cb(null,db);
-			  db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
-				cb(null,db);
-			  }))
+							if(!cfg.auth)
+								return cb(null,db);
+							db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+								cb(null,db);
+							}))
 						}));
 					},
 					ensureIndex:function (col, index, options, cb) {
@@ -225,8 +225,8 @@ module.exports.mongodb = function () {
 							cb = options;
 							options = {};
 						}
-
-						var dbkey = col.db.serverConfig.name+"/"+col.db.databaseName;
+						
+						var dbkey = col.namespace;
 						var dbif = indexinfo[dbkey];
 						if (!dbif) {
 							dbif = indexinfo[dbkey]={};
@@ -242,7 +242,7 @@ module.exports.mongodb = function () {
 						}));
 					},
 					dropUnusedIndexes:function (db, cb) {
-						var dbkey = db.serverConfig.name+"/"+db.databaseName;
+						var dbkey = col.namespace;
 						var dbif = indexinfo[dbkey];
 						if (!dbif)
 							return safe.back(cb, null);
