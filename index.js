@@ -225,7 +225,7 @@ module.exports.mongodb = function () {
 							options = {};
 						}
 						
-						var dbkey = col.namespace;
+						var dbkey = col.namespace || col.db.serverConfig.name+"/"+col.db.databaseName;
 						var dbif = indexinfo[dbkey];
 						if (!dbif) {
 							dbif = indexinfo[dbkey]={};
@@ -241,7 +241,7 @@ module.exports.mongodb = function () {
 						}));
 					},
 					dropUnusedIndexes:function (db, cb) {
-						var dbkey = col.namespace;
+						var dbkey = col.namespace || col.db.serverConfig.name+"/"+col.db.databaseName;
 						var dbif = indexinfo[dbkey];
 						if (!dbif)
 							return safe.back(cb, null);
