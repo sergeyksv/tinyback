@@ -219,13 +219,17 @@ module.exports.mongodb = function () {
 							}))
 						}));
 					},
-					ensureIndex:function (db, col, index, options, cb) {
+					ensureIndex:function (col, index, options, cb) {
 						if (_.isFunction(options)) {
 							cb = options;
 							options = {};
 						}
-						
-						var dbkey = db.databaseName;
+						var dbkey = "";
+						if (col.s) {
+							dbkey = col.s.db.serverConfig.host +":"+ col.s.db.serverConfig.port +"/"+ col.s.db.databaseName
+						}else{
+							dbkey = col.namespace || col.db.serverConfig.name+"/"+col.db.databaseName;
+						}
 						var dbif = indexinfo[dbkey];
 						if (!dbif) {
 							dbif = indexinfo[dbkey]={};
@@ -241,7 +245,12 @@ module.exports.mongodb = function () {
 						}));
 					},
 					dropUnusedIndexes:function (db, cb) {
-						var dbkey = db.databaseName;
+						var dbkey = "";
+						if (db.serverConfig.name) {
+							dbkey = db.serverConfig.name+"/"+db.databaseName;
+						}else{
+							dbkey = db.serverConfig.host +":"+ db.serverConfig.port +"/"+ db.databaseName
+						}
 						var dbif = indexinfo[dbkey];
 						if (!dbif)
 							return safe.back(cb, null);
@@ -402,7 +411,7 @@ module.exports.mongocache = function () {
 							if (col)
 								return safe.back(cb,new Error("Cache "+id+" is already registered"));
 							db.collection("cache_"+id, safe.sure(cb, function (col) {
-								ctx.api.mongo.ensureIndex(db, col,{d:1},{expireAfterSeconds: opts.maxAge || 3600},safe.sure(cb, function () {
+								ctx.api.mongo.ensureIndex(col,{d:1},{expireAfterSeconds: opts.maxAge || 3600},safe.sure(cb, function () {
 									entries["cache_"+id] = col;
 									cb();
 								}));
