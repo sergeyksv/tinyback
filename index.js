@@ -52,9 +52,9 @@ module.exports.createApp = function (cfg, cb) {
 	});
 	app.use(require("compression")());
 	app.use(cookieParser());
-	app.use(bodyParser.json({ limit: "20mb" }));
-	app.use(bodyParser.raw({ limit: "50mb" })); // to parse getsentry "application/octet-stream" requests
-	app.use(bodyParser.urlencoded({ extended: true }));
+	app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
+	app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
+	app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
 	app.use(multer());
 	var api = {};
 	var locals = {};
@@ -87,7 +87,6 @@ module.exports.createApp = function (cfg, cb) {
 			var dt = new Date();
 			mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
 				console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
-
 				api[module.name]=mobj.api;
 				cb();
 			}));
@@ -123,11 +122,11 @@ module.exports.restapi = function () {
 
 				var params = (req.method == 'POST')?req.body:req.query;
 
-				if (req.query._t_son=='in' || req.query._t_son=='both')
+				if (params._t_son=='in' || params._t_son=='both')
 					params = ctx.api.tson.decode(params);
 
-				ctx.api[req.params.module][req.params.target](req.params.token, (req.method == 'POST')?req.body:req.query, safe.sure(next, function (result) {
-					if (req.query._t_son=='out' || req.query._t_son=='both')
+				ctx.api[req.params.module][req.params.target](req.params.token, params, safe.sure(next, function (result) {
+					if (params._t_son=='out' || params._t_son=='both')
 						result = ctx.api.tson.encode(result);
 
 					var maxAge = 0;
@@ -224,8 +223,12 @@ module.exports.mongodb = function () {
 							cb = options;
 							options = {};
 						}
-
-						var dbkey = col.db.serverConfig.name+"/"+col.db.databaseName;
+						var dbkey = "";
+						if (col.s) {
+							dbkey = col.s.db.serverConfig.host +":"+ col.s.db.serverConfig.port +"/"+ col.s.db.databaseName
+						}else{
+							dbkey = col.namespace || col.db.serverConfig.name+"/"+col.db.databaseName;
+						}
 						var dbif = indexinfo[dbkey];
 						if (!dbif) {
 							dbif = indexinfo[dbkey]={};
@@ -241,7 +244,12 @@ module.exports.mongodb = function () {
 						}));
 					},
 					dropUnusedIndexes:function (db, cb) {
-						var dbkey = db.serverConfig.name+"/"+db.databaseName;
+						var dbkey = "";
+						if (db.serverConfig.name) {
+							dbkey = db.serverConfig.name+"/"+db.databaseName;
+						}else{
+							dbkey = db.serverConfig.host +":"+ db.serverConfig.port +"/"+ db.databaseName
+						}
 						var dbif = indexinfo[dbkey];
 						if (!dbif)
 							return safe.back(cb, null);
