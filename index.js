@@ -9,6 +9,8 @@ var bodyParser = require('body-parser');
 var multer = require('multer');
 var lxval = require('lx-valid');
 var crypto = require('crypto');
+var child_process = require("child_process");
+var Hook = require('tinyhook').Hook;
 
 var CustomError = module.exports.CustomError	= function (message, subject) {
 	this.constructor.prototype.__proto__ = Error.prototype;
@@ -61,10 +63,47 @@ module.exports.createApp = function (cfg, cb) {
 	var auto = {};
 	var registered = {};
 	var requested = {};
+	var lmodules = {};
+	var nodes = process.argv[4]?JSON.parse(process.argv[4]):{};
+
+	var thisNode = process.argv[3] || "root";
+
+	var hook = new Hook( {
+		name: thisNode
+	});
+	hook.start();
+
+	hook.once("hook::ready", function () {
+
+	hook.on("*::tinyback::wantmoduleproxy", function (mname) {
+		if (api[mname]) {
+			hook.emit("tinyback::moduleschema::"+mname,_.keys(api[mname]));
+		}
+	});
+
+	hook.on("*::tinyback::call", function (call) {
+		if (lmodules[call.module]) {
+			call.params[call.params.length-1] = function (err, res) {
+				hook.emit("tinyback::reply",{rn:call.rn,err:err?err.toString():null, res:res});
+			};
+			api[call.module][call.func].apply(api[call.module],call.params);
+		}
+	});
+
+	var cbs = {};
+	var i = 0;
+	hook.on("*::tinyback::reply", function (reply) {
+		var cb = cbs[reply.rn];
+		if (cb) {
+			delete cbs[reply.rn];
+			cb(reply.err?new Error(reply.err):null, reply.res);
+		}
+	});
 
 	_.each(cfg.modules, function (module) {
 		registered[module.name]=1;
 		var mod = module.object || null;
+		var local = module.target == "local" || module.target == thisNode;
 		if (module.require) {
 			var mpath = module.require;
 			if (mpath.charAt(0)==".")
@@ -85,11 +124,36 @@ module.exports.createApp = function (cfg, cb) {
 				app.use("/"+module.name,router);
 			}
 			var dt = new Date();
-			mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
-				console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
-				api[module.name]=mobj.api;
-				cb();
-			}));
+			if (local) {
+				mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
+					console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
+					api[module.name]=mobj.api;
+					lmodules[module.name]=1;
+					hook.emit("tinyback::moduleschema::"+module.name,_.keys(mobj.api));
+					cb();
+				}));
+			} else {
+				if (!nodes[module.target]) {
+					child_process.fork(process.argv[1], ["node",module.target,JSON.stringify(nodes)]);
+				}
+				hook.once("*::tinyback::moduleschema::"+module.name, function (schema) {
+					var apim = {};
+					_.each(schema, function (f) {
+						apim[f]= function () {
+							var cb = arguments[arguments.length-1];
+							var args = safe.args.apply(0, arguments);
+							args[args.length-1]=null;
+							var rn = thisNode+(i++);
+							cbs[rn]=cb;
+							hook.emit("tinyback::call",{module:module.name, func:f, rn: rn, params:args});
+						};
+					});
+					api[module.name] = apim;
+					cb();
+				});
+				hook.emit("tinyback::wantmoduleproxy",module.name);
+			}
+			nodes[module.target]=1;
 		});
 		auto[module.name]=args;
 	});
@@ -99,8 +163,9 @@ module.exports.createApp = function (cfg, cb) {
 	var dt = new Date();
 	safe.auto(auto, safe.sure(cb, function () {
 		console.log("-> ready in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
-		cb(null, {express:app,api:api,locals:locals});
+		cb(null, {express:app,api:api,locals:locals,target:thisNode});
 	}));
+});
 };
 
 module.exports.restapi = function () {
