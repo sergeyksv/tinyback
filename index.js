@@ -130,10 +130,11 @@ module.exports.createApp = function (cfg, cb) {
 					api[module.name]=mobj.api;
 					lmodules[module.name]=1;
 					hook.emit("tinyback::moduleschema::"+module.name,_.keys(mobj.api));
+					nodes[module.target]=1;
 					cb();
 				}));
 			} else {
-				if (!nodes[module.target]) {
+				if (!nodes[module.target] && thisNode == "root") {
 					child_process.fork(process.argv[1], ["node",module.target,JSON.stringify(nodes)]);
 				}
 				hook.once("*::tinyback::moduleschema::"+module.name, function (schema) {
@@ -149,11 +150,11 @@ module.exports.createApp = function (cfg, cb) {
 						};
 					});
 					api[module.name] = apim;
+					nodes[module.target]=1;
 					cb();
 				});
 				hook.emit("tinyback::wantmoduleproxy",module.name);
 			}
-			nodes[module.target]=1;
 		});
 		auto[module.name]=args;
 	});
