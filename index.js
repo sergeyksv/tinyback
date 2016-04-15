@@ -81,18 +81,9 @@ module.exports.createApp = function (cfg, cb) {
 		}
 	});
 
-	hook.on("*::tinyback::call", function (call) {
-		if (lmodules[call.module]) {
-			call.params[call.params.length-1] = function (err, res) {
-				hook.emit("tinyback::reply",{rn:call.rn,err:err?err.toString():null, res:res});
-			};
-			api[call.module][call.func].apply(api[call.module],call.params);
-		}
-	});
-
 	var cbs = {};
 	var i = 0;
-	hook.on("*::tinyback::reply", function (reply) {
+	hook.on("*::tinyback::reply::"+thisNode, function (reply) {
 		var cb = cbs[reply.rn];
 		if (cb) {
 			delete cbs[reply.rn];
@@ -127,10 +118,16 @@ module.exports.createApp = function (cfg, cb) {
 			if (local) {
 				mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
 					console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
-					api[module.name]=mobj.api;
+					var lapi = api[module.name]=mobj.api;
 					lmodules[module.name]=1;
 					hook.emit("tinyback::moduleschema::"+module.name,_.keys(mobj.api));
 					nodes[module.target]=1;
+					hook.on("*::tinyback::call::"+module.name, function (call) {
+						call.params[call.params.length-1] = function (err, res) {
+							hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?err.toString():null, res:res});
+						};
+						lapi[call.func].apply(lapi,call.params);
+					});
 					cb();
 				}));
 			} else {
@@ -146,7 +143,7 @@ module.exports.createApp = function (cfg, cb) {
 							args[args.length-1]=null;
 							var rn = thisNode+(i++);
 							cbs[rn]=cb;
-							hook.emit("tinyback::call",{module:module.name, func:f, rn: rn, params:args});
+							hook.emit("tinyback::call::"+module.name,{node:thisNode, func:f, rn: rn, params:args});
 						};
 					});
 					api[module.name] = apim;
