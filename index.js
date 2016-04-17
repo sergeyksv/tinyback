@@ -132,7 +132,7 @@ module.exports.createApp = function (cfg, cb) {
 				}));
 			} else {
 				if (!nodes[module.target] && thisNode == "root") {
-					child_process.fork(process.argv[1], ["node",module.target,JSON.stringify(nodes)]);
+					hook.emit("hook::fork",{script:process.argv[1], params:["node",module.target,JSON.stringify(nodes)]});
 				}
 				hook.once("*::tinyback::moduleschema::"+module.name, function (schema) {
 					var apim = {};
