@@ -1,14 +1,13 @@
-var safe = require('safe');
 var _ = require('lodash');
 
 function ensurePath(obj,k,opts,cb) {
 	if (arguments.length==3) {
-		cb = opts; opts = {}
+		cb = opts; opts = {};
 	}
 	var path = opts.nodots?[k]:k.split(".");
 	var t = null;
 	if (path.length==1)
-		t = obj
+		t = obj;
 	else {
 		var l = obj;
 		for (var i=0; i<path.length-1; i++) {
@@ -20,7 +19,7 @@ function ensurePath(obj,k,opts,cb) {
 		t = l;
 		k = path[i];
 	}
-	cb(t,k)
+	cb(t,k);
 }
 
 function applySet(obj,$set,nested) {
@@ -34,8 +33,8 @@ function applySet(obj,$set,nested) {
 			}
 			else
 				t[k] = v;
-		})
-	})
+		});
+	});
 }
 
 function applyUnset(obj,$set) {
@@ -44,7 +43,7 @@ function applyUnset(obj,$set) {
 		for (var i=0; i<path.length-1 && t[path[i]]; t=t[path[i++]]); k = path[i];
 		if (t==null || t[k]==null) return;
 		delete t[k];
-	})
+	});
 }
 
 function applyInc(obj, $inc) {
@@ -54,7 +53,7 @@ function applyInc(obj, $inc) {
 			if (!_.isFinite(t[k]))
 				throw new Error("Cannot apply $inc modifier to non-number");
 			t[k] += v;
-		})
+		});
 	});
 }
 
@@ -65,7 +64,7 @@ function applyPush(obj,$push) {
 				t[k] = v.$each?v.$each:[v];
 			} else {
 				if (!_.isArray(t[k]))
-					throw new Error("Cannot apply $push/$pushAll modifier to non-array")
+					throw new Error("Cannot apply $push/$pushAll modifier to non-array");
 
 				if (v.$each) {
 					_.each(v.$each, function(elem) {
@@ -74,8 +73,8 @@ function applyPush(obj,$push) {
 				} else
 					t[k].push(v);
 			}
-		})
-	})
+		});
+	});
 }
 
 function applyPop(obj,$op) {
@@ -85,11 +84,11 @@ function applyPop(obj,$op) {
 		if (t==null || t[k]==null) return;
 		if (_.isArray(t[k])) {
 			if (v>=0)
-				t[k]=t[k].slice(0,-1)
+				t[k]=t[k].slice(0,-1);
 			else if (v==-1)
-				t[k]=t[k].slice(1)
+				t[k]=t[k].slice(1);
 		} else throw new Error("Cannot apply $pop modifier to non-array");
-	})
+	});
 }
 
 function applyPull(obj,$op,tdb) {
@@ -99,11 +98,10 @@ function applyPull(obj,$op,tdb) {
 		if (t==null || t[k]==null) return;
 		if (_.isArray(t[k])) {
 			var qt = tdb.Finder.matcher({v:v});
-			var matcher = null;
-			eval("matcher = function (obj) { return "+ (qt.native()) + " }");
+			var matcher = new Function("obj", "return " + (qt.native()) );
 			t[k] = _.reject(t[k], function (obj) { return matcher({v:obj}); });
 		} else throw new Error("Cannot apply $pull/$pullAll modifier to non-array");
-	})
+	});
 }
 
 function applyPullAll(obj,$op) {
@@ -112,9 +110,9 @@ function applyPullAll(obj,$op) {
 		for (var i=0; i<path.length-1 && t[path[i]]; t=t[path[i++]]); k = path[i];
 		if (t==null || t[k]==null) return;
 		if (_.isArray(t[k])) {
-			t[k] = _.without.apply(_,_.union([t[k]],v));
+			t[k] = _.difference(t[k], v);
 		} else throw new Error("Cannot apply $pull/$pullAll modifier to non-array");
-	})
+	});
 }
 
 function applyRename(obj,$op) {
@@ -125,8 +123,8 @@ function applyRename(obj,$op) {
 		ensurePath(obj,v, function (t1,k1) {
 			t1[k1] = t[k];
 			delete t[k];
-		})
-	})
+		});
+	});
 }
 
 function applyAddToSet(obj,$op) {
@@ -136,7 +134,7 @@ function applyAddToSet(obj,$op) {
 				t[k] = v.$each?v.$each:[v];
 			} else {
 				if (!_.isArray(t[k]))
-					throw new Error("Cannot apply $addToSet modifier to non-array")
+					throw new Error("Cannot apply $addToSet modifier to non-array");
 
 				if (v.$each) {
 					_.each(v.$each, function(elem) {
@@ -148,8 +146,8 @@ function applyAddToSet(obj,$op) {
 						t[k].push(v);
 				}
 			}
-		})
-	})
+		});
+	});
 }
 
 function applyPushAll(obj,$pushAll) {
@@ -159,20 +157,20 @@ function applyPushAll(obj,$pushAll) {
 				t[k] = v;
 			} else {
 				if (!_.isArray(t[k]))
-					throw new Error("Cannot apply $push/$pushAll modifier to non-array")
+					throw new Error("Cannot apply $push/$pushAll modifier to non-array");
 
 				_.each(v, function(elem) {
 					t[k].push(elem);
 				});
 			}
-		})
-	})
+		});
+	});
 }
 
 function updater(op,tdb) {
 	this.hasAtomic = function () {
 		return _.find(_.keys(op), function (k) { return k[0]=="$"; })!=null;
-	}
+	};
 
 	this.update = function ($doc,upsert) {
 		if (op.$set)
@@ -196,8 +194,8 @@ function updater(op,tdb) {
 		if (op.$rename)
 			applyRename($doc, op.$rename);
 		if (upsert && op.$setOnInsert)
-			applySet($doc,op.$setOnInsert)
-	}
+			applySet($doc,op.$setOnInsert);
+	};
 }
 
 module.exports = updater;
