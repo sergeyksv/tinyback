@@ -257,7 +257,7 @@ module.exports.mongodb = function () {
 							db.indexInformation(colName, safe.sure(cb, function (index) {
 								var unused = _.difference(_.keys(index),_.keys(coll));
 								safe.each(unused, function (indexName,cb) {
-									db.dropIndex(colName, indexName, cb);
+									db.collection(colName).dropIndex(indexName, cb);
 								},cb);
 							}));
 						},cb);
