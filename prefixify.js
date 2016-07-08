@@ -1,10 +1,21 @@
-if (typeof define !== 'function') { var define = require('amdefine')(module); }
-
-define(["module","lodash"],function (module,_) {
+!(function (factory) {
+	if (typeof define === 'function' && define.amd) {
+		// AMD (Register as an anonymous module)
+		define(['lodash'], factory);
+	} else if (typeof exports === 'object') {
+		// Node/CommonJS
+		module.exports = factory(require('lodash'));
+	} else {
+		// Browser globals
+		factory(_);
+	}
+}(function (_) {
 	var translate = {
 		"_i_": function (pr) {
-			if (!isNaN(parseInt(pr)))
-				return parseInt(pr);
+			pr = parseInt(pr);
+
+			if (!_.isNaN(pr))
+				return pr;
 		},
 		"_s_": function (pr) {
 			return pr.toString();
@@ -13,8 +24,10 @@ define(["module","lodash"],function (module,_) {
 			return pr.toString();
 		},
 		"_f_": function (pr) {
-			if (!isNaN(parseFloat(pr)))
-				return parseFloat(pr);
+			pr = parseFloat(pr);
+
+			if (!_.isNaN(pr))
+				return pr;
 		},
 		"_t_": function (pr) {
 		},
@@ -24,13 +37,13 @@ define(["module","lodash"],function (module,_) {
 				return new Date(t);
 			else if (!isNaN(parseInt(pr)))
 				return new Date(parseInt(pr));
-			else if (pr instanceof Date)
+			else if (_.isDate(pr))
 				return pr;
 		},
 		"_b_": function (pr) {
-			if (_.contains([true,"true",1,"1"], pr))
+			if (pr === true || pr === 1 || pr === "true" || pr === "1")
 				return 1;
-			if (_.contains([false,"false",0,"0",null,"null",""], pr))
+			if (pr === false || pr === 0 || pr === "false" || pr === "0" || pr === null || pr === "null")
 				return 0;
 		}
 	};
@@ -62,17 +75,17 @@ define(["module","lodash"],function (module,_) {
 						if (_.isArray(val)) {
 							var na = [];
 							_.each(val, function (a) {
-								try { na.push(translate[prefix](a)); } catch (e) {}
+								_.attempt(function () { na.push(translate[prefix](a)); });
 							});
 							no[op]=na;
 						} else {
-							try { no[op] = translate[prefix](val); } catch (e) {}
+							_.attempt(function () { no[op] = translate[prefix](val); } );
 						}
 					});
 					nobj[k]=no;
 				} else {
 					// plain value then
-					try { nobj[k] = translate[prefix](v); } catch (e) {}
+					_.attempt(function () { nobj[k] = translate[prefix](v); });
 				}
 			} else {
 				if (_.isPlainObject(v))
@@ -86,8 +99,9 @@ define(["module","lodash"],function (module,_) {
 
 	function datafix(obj,opts) {
 		var nobj = obj;
+
 		_.each(obj, function (v, k) {
-			if (_.isFunction(v))
+			if (_.isFunction(v) || _.isUndefined(v))
 				return;
 
 			var prefix = null;
@@ -96,14 +110,14 @@ define(["module","lodash"],function (module,_) {
 
 			if (prefix && translate[prefix]) {
 				var nv;
-				try { nv = translate[prefix](v); } catch (e) {}
+				_.attempt(function () { nv = translate[prefix](v); });
 				if (_.isUndefined(nv)) {
 					if (opts && opts.strict)
 						throw new Error("Wrong field format: "+k);
 					delete nobj[k];
 				} else if (nv!==v)
 					nobj[k] = nv;
-			} else if (_.isObject(v) || _.isArray(v)) {
+			} else if (_.isPlainObject(v) || _.isArray(v)) {
 				datafix(v,opts);
 			}
 		});
@@ -120,5 +134,4 @@ define(["module","lodash"],function (module,_) {
 			translate[prefix]=transform;
 		}
 	};
-
-});
+}));

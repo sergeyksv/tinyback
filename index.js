@@ -323,7 +323,7 @@ module.exports.mongodb = function () {
 								return cb(null,db);
 							db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
 								cb(null,db);
-							}))
+							}));
 						}));
 					},
 					ensureIndex:function (col, index, options, cb) {
@@ -333,7 +333,7 @@ module.exports.mongodb = function () {
 						}
 						var dbkey = "";
 						if (col.s) {
-							dbkey = col.s.db.serverConfig.host +":"+ col.s.db.serverConfig.port +"/"+ col.s.db.databaseName
+							dbkey = col.s.db.serverConfig.host +":"+ col.s.db.serverConfig.port +"/"+ col.s.db.databaseName;
 						}else{
 							dbkey = col.namespace || col.db.serverConfig.name+"/"+col.db.databaseName;
 						}
@@ -362,11 +362,10 @@ module.exports.mongodb = function () {
 							var dbif = indexinfo[dbkey];
 							if (!dbif)
 								return safe.back(cb, null);
-							safe.each(_.keys(dbif), function (colName, cb) {
+							safe.eachOf(dbif, function (coll, colName, cb) {
 								db.indexInformation(colName, safe.sure(cb, function (index) {
-									var unused = _.difference(_.keys(index),_.keys(dbif[colName]));
+									var unused = _.difference(_.keys(index),_.keys(coll));
 									safe.each(unused, function (indexName,cb) {
-										console.log(indexName);
 										db.collection(colName).dropIndex(indexName, cb);
 									},cb);
 								}));
@@ -397,7 +396,7 @@ module.exports.obac = function () {
 					},
 					getPermissions:function (t, p, cb) {
 						var result = {};
-						safe.forEachOf(p.rules, function (rule, cb) {
+						safe.eachOf(p.rules, function (rule, cb) {
 							var acl = _.filter(_acl, function (a) {
 								return a.r.test(rule.action);
 							});
@@ -498,6 +497,7 @@ module.exports.validate = function () {
 
 module.exports.mongocache = function () {
 	var entries = {};
+	var md5sum;
 	var safeKey = function (key) {
 		var sKey = key.toString();
 		if (sKey.length>512) {
