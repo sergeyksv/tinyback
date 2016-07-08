@@ -47,6 +47,7 @@ var ValidationError = module.exports.ValidationError = function (invalid) {
 };
 
 module.exports.createApp = function (cfg, cb) {
+	cfg.modules.unshift({target:"root", name:"_t_registry",object:_t_registry()});
 	var app = express();
 	app.use(function (req, res, next) {
 		req.setMaxListeners(20);
@@ -64,9 +65,19 @@ module.exports.createApp = function (cfg, cb) {
 	var registered = {};
 	var requested = {};
 	var lmodules = {};
-	var nodes = process.argv[4]?JSON.parse(process.argv[4]):{};
 
-	var thisNode = process.argv[3] || "root";
+	var nodes = {};
+	var thisNode = "root";
+
+	// lets check if we was launched as tiny back node
+	_.each(process.argv, function (param) {
+		var match = /--tinybacknode=(.*)/.exec(param);
+		if (match) {
+			var params = JSON.parse(match[1]);
+			thisNode = params.target;
+			nodes = params.nodes;
+		}
+	})
 
 	var hook = new Hook( {
 		name: thisNode
@@ -94,6 +105,10 @@ module.exports.createApp = function (cfg, cb) {
 	_.each(cfg.modules, function (module) {
 		registered[module.name]=1;
 		var mod = module.object || null;
+		// setting default value
+		if (!module.target)
+		 	module.target = "root";
+		// checkinng if this module is local to this node or not
 		var local = module.target == "local" || module.target == thisNode;
 		if (module.require) {
 			var mpath = module.require;
@@ -116,7 +131,7 @@ module.exports.createApp = function (cfg, cb) {
 			}
 			var dt = new Date();
 			if (local) {
-				mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
+				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
 					console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
 					var lapi = api[module.name]=mobj.api;
 					lmodules[module.name]=1;
@@ -132,7 +147,10 @@ module.exports.createApp = function (cfg, cb) {
 				}));
 			} else {
 				if (!nodes[module.target] && thisNode == "root") {
-					hook.emit("hook::fork",{script:process.argv[1], params:["node",module.target,JSON.stringify(nodes)]});
+					// need to launch for for dedicated target
+					var forkparams = Array.prototype.slice.call(process.argv,2);
+					forkparams.push("--tinybacknode="+JSON.stringify({target:module.target,nodes:nodes}));
+					hook.emit("hook::fork",{script:process.argv[1], params:forkparams});
 				}
 				hook.once("*::tinyback::moduleschema::"+module.name, function (schema) {
 					var apim = {};
@@ -241,10 +259,38 @@ module.exports.tson = function () {
 	};
 };
 
+function _t_registry() {
+	return {
+		reqs:{router:false},
+		deps:[],
+		init:function (ctx,cb) {
+			var store = {};
+			cb(null, {
+				api:{
+					set:function (k,v,cb) {
+						store[k] = v;
+						safe.back(cb);
+					},
+					get:function (k, cb) {
+						safe.back(cb,null,store[k]);
+					},
+					merge:function (k, v, cb) {
+						var data = store[k];
+						if (!data)
+						 	data = store[k]={};
+						_.merge(data,v);
+						cb();
+					}
+				}
+			});
+		}
+	};
+};
+
 module.exports.mongodb = function () {
 	return {
 		reqs:{router:false},
-		deps:['prefixify'],
+		deps:['prefixify','_t_registry'],
 		init:function (ctx,cb) {
 			var mongo = require("mongodb");
 			ctx.api.prefixify.register("_id",function (pr) {
@@ -252,7 +298,6 @@ module.exports.mongodb = function () {
 			});
 
 			var dbcache = {};
-			var indexinfo = {};
 			cb(null, {
 				api:{
 					getDb:function (prm,cb) {
@@ -292,10 +337,8 @@ module.exports.mongodb = function () {
 						}else{
 							dbkey = col.namespace || col.db.serverConfig.name+"/"+col.db.databaseName;
 						}
-						var dbif = indexinfo[dbkey];
-						if (!dbif) {
-							dbif = indexinfo[dbkey]={};
-						}
+						var indexinfo = {};
+						var dbif = indexinfo[dbkey] = {};
 						var colkey = col.collectionName;
 						var cif = dbif[colkey];
 						if (!cif) {
@@ -303,27 +346,32 @@ module.exports.mongodb = function () {
 						}
 						col.ensureIndex(index, options, safe.sure(cb, function (indexname) {
 							cif[indexname]=true;
-							cb();
+							ctx.api._t_registry.merge("indexinfo",indexinfo, cb);
 						}));
 					},
 					dropUnusedIndexes:function (db, cb) {
-						var dbkey = "";
-						if (db.serverConfig.name) {
-							dbkey = db.serverConfig.name+"/"+db.databaseName;
-						}else{
-							dbkey = db.serverConfig.host +":"+ db.serverConfig.port +"/"+ db.databaseName
-						}
-						var dbif = indexinfo[dbkey];
-						if (!dbif)
-							return safe.back(cb, null);
-						safe.each(_.keys(dbif), function (colName, cb) {
-							db.indexInformation(colName, safe.sure(cb, function (index) {
-								var unused = _.difference(_.keys(index),_.keys(dbif[colName]));
-								safe.each(unused, function (indexName,cb) {
-									db.dropIndex(colName, indexName, cb);
-								},cb);
-							}));
-						},cb);
+						if (ctx.target!="root")
+							return safe.back(cb);
+						ctx.api._t_registry.get("indexinfo", safe.sure(cb, function (indexinfo) {
+							var dbkey = "";
+							if (db.serverConfig.name) {
+								dbkey = db.serverConfig.name+"/"+db.databaseName;
+							}else{
+								dbkey = db.serverConfig.host +":"+ db.serverConfig.port +"/"+ db.databaseName
+							}
+							var dbif = indexinfo[dbkey];
+							if (!dbif)
+								return safe.back(cb, null);
+							safe.each(_.keys(dbif), function (colName, cb) {
+								db.indexInformation(colName, safe.sure(cb, function (index) {
+									var unused = _.difference(_.keys(index),_.keys(dbif[colName]));
+									safe.each(unused, function (indexName,cb) {
+										console.log(indexName);
+										db.collection(colName).dropIndex(indexName, cb);
+									},cb);
+								}));
+							},cb);
+						}))
 					}
 				}
 			});
