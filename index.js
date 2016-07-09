@@ -11,11 +11,12 @@ var lxval = require('lx-valid');
 var crypto = require('crypto');
 var child_process = require("child_process");
 var Hook = require('tinyhook').Hook;
+var http = require('http');
 
 var CustomError = module.exports.CustomError	= function (message, subject) {
 	this.constructor.prototype.__proto__ = Error.prototype;
 	Error.captureStackTrace(this, this.constructor);
-	this.name = this.constructor.name;
+	this.name = "CustomError";
 	this.message = message;
 	this.subject = subject;
 };
@@ -47,7 +48,16 @@ var ValidationError = module.exports.ValidationError = function (invalid) {
 };
 
 module.exports.createApp = function (cfg, cb) {
-	cfg.modules.unshift({target:"root", name:"_t_registry",object:_t_registry()});
+	// inject some modules for internal use if not requested
+	var hasRegistry = false;
+	_.each(cfg.modules, function (module) {
+		if (module.name == "_t_registry")
+			hasRegistry = true;
+	});
+	if (!hasRegistry)
+		cfg.modules.unshift({target:"root", name:"_t_registry",object:_t_registry()});
+
+	// create express app (might need to create it on demand ?)
 	var app = express();
 	app.use(function (req, res, next) {
 		req.setMaxListeners(20);
@@ -65,9 +75,18 @@ module.exports.createApp = function (cfg, cb) {
 	var registered = {};
 	var requested = {};
 	var lmodules = {};
+	var proxy = null; // proxy might be required for multinode
 
 	var nodes = {};
 	var thisNode = "root";
+
+	var hook = new Hook( {
+		name: thisNode,
+		port: cfg.hookPort
+	});
+	hook.start();
+
+	hook.once("hook::ready", function () {
 
 	// lets check if we was launched as tiny back node
 	_.each(process.argv, function (param) {
@@ -76,15 +95,18 @@ module.exports.createApp = function (cfg, cb) {
 			var params = JSON.parse(match[1]);
 			thisNode = params.target;
 			nodes = params.nodes;
+			// when running as node we need to listen on random port
+			// and announce it
+			var httpServer = http.createServer(app);
+			httpServer.listen(0, function () {
+				var port = httpServer.address().port;
+				hook.emit("tinyback::targetproxy::"+thisNode,{port:port});
+				hook.on("*::tinyback::wanttargetproxy::"+thisNode, function (target) {
+					hook.emit("tinyback::targetproxy::"+thisNode,{port:port});
+				});
+			})
 		}
 	})
-
-	var hook = new Hook( {
-		name: thisNode
-	});
-	hook.start();
-
-	hook.once("hook::ready", function () {
 
 	hook.on("*::tinyback::wantmoduleproxy", function (mname) {
 		if (api[mname]) {
@@ -98,7 +120,15 @@ module.exports.createApp = function (cfg, cb) {
 		var cb = cbs[reply.rn];
 		if (cb) {
 			delete cbs[reply.rn];
-			cb(reply.err?new Error(reply.err):null, reply.res);
+			var err = null;
+			if (reply.err) {
+				if (reply.err.name ==  "CustomError") {
+					err = new CustomError(reply.err.message, reply.err.subject)
+				}
+				else
+					err = new Error(reply.err);
+			}
+			cb(err, reply.res);
 		}
 	});
 
@@ -106,7 +136,7 @@ module.exports.createApp = function (cfg, cb) {
 		registered[module.name]=1;
 		var mod = module.object || null;
 		// setting default value
-		if (!module.target)
+		if (!module.target || cfg.forceRootTarget)
 		 	module.target = "root";
 		// checkinng if this module is local to this node or not
 		var local = module.target == "local" || module.target == thisNode;
@@ -131,15 +161,16 @@ module.exports.createApp = function (cfg, cb) {
 			}
 			var dt = new Date();
 			if (local) {
-				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
-					console.log("loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
+				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,app:this,router:router}, safe.sure(cb, function (mobj) {
+					if (!(module.target == 'local' && thisNode != 'root'))
+						console.log(thisNode + " loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
 					var lapi = api[module.name]=mobj.api;
 					lmodules[module.name]=1;
 					hook.emit("tinyback::moduleschema::"+module.name,_.keys(mobj.api));
 					nodes[module.target]=1;
 					hook.on("*::tinyback::call::"+module.name, function (call) {
 						call.params[call.params.length-1] = function (err, res) {
-							hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?err.toString():null, res:res});
+							hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?JSON.parse(JSON.stringify(err)):null, res:res});
 						};
 						lapi[call.func].apply(lapi,call.params);
 					});
@@ -169,6 +200,18 @@ module.exports.createApp = function (cfg, cb) {
 					cb();
 				});
 				hook.emit("tinyback::wantmoduleproxy",module.name);
+				if (router) {
+					var port = null;
+					hook.emit("tinyback::wanttargetproxy::"+module.target);
+					hook.on("*::tinyback::targetproxy::"+module.target, function (data) {
+						port = data.port;
+					})
+					proxy = proxy || require('http-proxy').createProxyServer({});
+					app.all("/"+module.name+'*',function (req, res) {
+						if (port)
+							proxy.web(req, res, { target: 'http://localhost:'+port });
+					});
+				}
 			}
 		});
 		auto[module.name]=args;
@@ -178,7 +221,8 @@ module.exports.createApp = function (cfg, cb) {
 		return safe.back(cb, new Error("Missing module dependancies: " + missing.join(',')));
 	var dt = new Date();
 	safe.auto(auto, safe.sure(cb, function () {
-		console.log("-> ready in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
+		if (thisNode == "root")
+			console.log("-> ready in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
 		cb(null, {express:app,api:api,locals:locals,target:thisNode});
 	}));
 });
@@ -286,6 +330,8 @@ function _t_registry() {
 		}
 	};
 };
+
+module.exports._t_registry = _t_registry;
 
 module.exports.mongodb = function () {
 	return {
