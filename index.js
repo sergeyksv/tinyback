@@ -68,7 +68,7 @@ module.exports.createApp = function (cfg, cb) {
 	app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
 	app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
 	app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
-	app.use(multer());
+	app.use(multer({dest: '/tmp'}).any());
 	var api = {};
 	var locals = {};
 	var auto = {};
