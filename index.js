@@ -390,7 +390,7 @@ module.exports.mongocache = function () {
 	var safeKey = function (key) {
 		var sKey = key.toString();
 		if (sKey.length>512) {
-			md5sum = crypto.createHash('md5');
+			var md5sum = crypto.createHash('md5');
 			md5sum.update(sKey);
 			sKey = md5sum.digest('hex');
 		}
