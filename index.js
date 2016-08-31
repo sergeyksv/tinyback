@@ -111,14 +111,34 @@ module.exports.restapi = function () {
 				if (ctx.locals.newrelic)
 					ctx.locals.newrelic.setTransactionName(req.method+"/"+(req.params.token=="public"?"public":"token")+"/"+req.params.module+"/"+req.params.target);
 				var next = function (err) {
-					var statusMap = {"Unauthorized":401,"Access forbidden":403,"Invalid Data":422};
+					var statusMap = {"Unauthorized":401,"Access forbidden":403,"Invalid Data":422,"Not Found":404};
 					var code = statusMap[err.subject] || 500;
 					res.status(code).json(_.pick(err,['message','subject','data']));
 				};
-				if (!ctx.api[req.params.module])
-					throw new Error("No api module available");
-				if (!ctx.api[req.params.module][req.params.target])
-					throw new Error("No function available");
+				/* for security purposes it is required to white list modules that are exposed through api
+				 the reason is that not all module do check permissions and in general are allowed for external callbacks
+				 for backward compatibility it is ok to make empty restapi section with no restapi.modules defined.
+				 Example of configuration:
+				 restapi: {
+					 modules:{"statistics":1,"users":1,"web":1,
+						 "obac":{blacklist:{"register":1}},
+						 "email":{whitelist:{"getSendingStatuses":1}}}
+				 }
+				 */
+				if (!ctx.cfg.restapi)
+					return next(new Error("Explicit configuration of restapi.modules is required"));
+
+				// check if module is exist and it is whitelisted
+				if (!ctx.api[req.params.module] || (ctx.cfg.restapi.modules && !ctx.cfg.restapi.modules[req.params.module]))
+					return next(new CustomError("No api module available","Not Found"));
+				var modCfg = ctx.cfg.restapi.modules && ctx.cfg.restapi.modules[req.params.module];
+				// check if function is exist
+				if ((!ctx.api[req.params.module][req.params.target]) ||
+						// and it is specific function is either white or black listed
+						(_.isObject(modCfg) && (
+								(modCfg.blacklist && modCfg.blacklist[req.params.target]) ||
+								(modCfg.whilelist && !modCfg.whitelist[req.params.target]))))
+					return next(new CustomError("No function available", "Not Found"));
 
 				var params = (req.method == 'POST')?req.body:req.query;
 
