@@ -142,6 +142,9 @@ module.exports.restapi = function () {
 
 				var params = (req.method == 'POST')?req.body:req.query;
 
+				if(params._t_jsonq)
+ 					params = JSON.parse(params._t_jsonq)
+
 				if (params._t_son=='in' || params._t_son=='both')
 					params = ctx.api.tson.decode(params);
 
@@ -407,11 +410,10 @@ module.exports.validate = function () {
 
 module.exports.mongocache = function () {
 	var entries = {};
-	var md5sum;
 	var safeKey = function (key) {
 		var sKey = key.toString();
 		if (sKey.length>512) {
-			md5sum = crypto.createHash('md5');
+			var md5sum = crypto.createHash('md5');
 			md5sum.update(sKey);
 			sKey = md5sum.digest('hex');
 		}
