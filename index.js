@@ -153,8 +153,8 @@ module.exports.restapi = function () {
 						result = ctx.api.tson.encode(result);
 
 					var maxAge = 0;
-					if (req.query._t_age) {
-						var age = req.query._t_age;
+					if (params._t_age) {
+						var age = params._t_age;
 						var s = age.match(/(\d+)s?$/); s = s?parseInt(s[1]):0;
 						var m = age.match(/(\d+)m/); m = m?parseInt(m[1]):0;
 						var h = age.match(/(\d+)h/); h = h?parseInt(h[1]):0;
