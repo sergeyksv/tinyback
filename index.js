@@ -223,23 +223,30 @@ module.exports.mongodb = function () {
 						if (!cfg)
 							return safe.back(cb, new Error("No mongodb database for alias "+name));
 
-						var dbc = new mongo.Db(
-							cfg.db,
-							new mongo.Server(
-								cfg.host,
-								cfg.port,
-								cfg.scfg
-							),
-							cfg.ccfg
-						);
-						dbc.open(safe.sure(cb, function (db) {
-							dbcache[name]=db;
-							if(!cfg.auth)
-								return cb(null,db);
-							db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+						if (cfg.url) {
+							mongo.MongoClient.connect(cfg.url, {db:cfg.ccfg||{},server:cfg.scfg||{},replSet:cfg.rcfg||{},mongos:cfg.mcfg||{}}, safe.sure(cb, function (db) {
+								dbcache[name]=db;
 								cb(null,db);
+							}))
+						} else {
+							var dbc = new mongo.Db(
+								cfg.db,
+								new mongo.Server(
+									cfg.host,
+									cfg.port,
+									cfg.scfg
+								),
+								cfg.ccfg
+							);
+							dbc.open(safe.sure(cb, function (db) {
+								dbcache[name]=db;
+								if(!cfg.auth)
+									return cb(null,db);
+								db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+									cb(null,db);
+								}));
 							}));
-						}));
+						}
 					},
 					ensureIndex:function (col, index, options, cb) {
 						if (_.isFunction(options)) {
