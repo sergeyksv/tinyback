@@ -50,17 +50,21 @@ module.exports.createApp = function (cfg, cb) {
 		req.setMaxListeners(20);
 		next();
 	});
-	app.use(require("compression")());
-	app.use(cookieParser());
-	app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
-	app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
-	app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
-	app.use(multer());
+	function instrumentExpress(app) {
+		app.use(require("compression")());
+		app.use(cookieParser());
+		app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
+		app.use(bodyParser.text({ limit: cfg.config.app.postLimit || "20mb" }));
+		app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
+		app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
+		app.use(multer());
+	};
 	var api = {};
 	var locals = {};
 	var auto = {};
 	var registered = {};
 	var requested = {};
+	var defaults = cfg.defaults || {};
 
 	_.each(cfg.modules, function (module) {
 		registered[module.name]=1;
@@ -78,11 +82,15 @@ module.exports.createApp = function (cfg, cb) {
 		_.each(args, function (m) {
 			requested[m]=1;
 		});
+		var reqs = _.defaults(mod.reqs || {}, ((cfg.defaults || {}).module || {}).reqs || {}, {router:false, globalUse:false});
 		args.push(function (cb) {
 			var router = null;
-			if (!mod.reqs || mod.reqs.router!==false) {
+			if (reqs.router) {
 				router = express.Router();
 				app.use("/"+module.name,router);
+				if (reqs.globalUse) {
+					instrumentExpress(router);
+				}
 			}
 			var dt = new Date();
 			mod.init({api:api,locals:locals,cfg:cfg.config,app:this,express:app,router:router}, safe.sure(cb, function (mobj) {
