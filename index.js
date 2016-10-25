@@ -342,6 +342,9 @@ module.exports.obac = function () {
 						_.each(actions, function (a) {
 							_acl.push({m:module, f:face, r:new RegExp(a.replace("*",".*"))});
 						});
+					},
+					getRegistered:function(t, p, cb){
+						cb(null, _.cloneDeep(_acl));
 					}
 				}
 			});
