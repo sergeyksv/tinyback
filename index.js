@@ -70,7 +70,7 @@ module.exports.createApp = function (cfg, cb) {
 		app.use(bodyParser.text({ limit: cfg.config.app.postLimit || "20mb" }));
 		app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
 		app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
-		app.use(multer());
+		app.use(multer({dest: '/tmp'}).any());
 	};
 	var api = {};
 	var locals = {};
@@ -125,7 +125,7 @@ module.exports.createApp = function (cfg, cb) {
 			delete cbs[reply.rn];
 			var err = null;
 			if (reply.err) {
-				if (reply.err.name ==  "CustomError") {
+				if (reply.err.name ==  "CustomError" || reply.err.subject) {
 					err = new CustomError(reply.err.message, reply.err.subject)
 				}
 				else
@@ -139,11 +139,6 @@ module.exports.createApp = function (cfg, cb) {
 	_.each(cfg.modules, function (module) {
 		registered[module.name]=1;
 		var mod = module.object || null;
-		// setting default value
-		if (!module.target || cfg.forceRootTarget)
-		 	module.target = "root";
-		// checkinng if this module is local to this node or not
-		var local = module.target == "local" || module.target == thisNode;
 		if (module.require) {
 			var mpath = module.require;
 			if (mpath.charAt(0)==".")
@@ -152,6 +147,12 @@ module.exports.createApp = function (cfg, cb) {
 		}
 		if (!mod)
 			return cb(new Error("Can't not load module " + module.name));
+		// setting default value
+		module.target = module.target || mod.target;
+		if (!module.target || cfg.forceRootTarget)
+		 	module.target = "root";
+		// checkinng if this module is local to this node or not
+		var local = module.target == "local" || module.target == thisNode;
 		var args = _.clone(module.deps || []);
 		args = _.union(mod.deps || [],args);
 		_.each(args, function (m) {
@@ -169,7 +170,7 @@ module.exports.createApp = function (cfg, cb) {
 			}
 			var dt = new Date();
 			if (local) {
-				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,app:this,router:router}, safe.sure(cb, function (mobj) {
+				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,defs:(cfg.defaults || {}),app:this,router:router}, safe.sure(cb, function (mobj) {
 					if (!(module.target == 'local' && thisNode != 'root'))
 						console.log(thisNode + " loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
 					var lapi = api[module.name]=mobj.api;
@@ -177,8 +178,10 @@ module.exports.createApp = function (cfg, cb) {
 					hook.emit("tinyback::moduleschema::"+module.name,_.keys(mobj.api));
 					nodes[module.target]=1;
 					hook.on("*::tinyback::call::"+module.name, function (call) {
-						call.params[call.params.length-1] = function (err, res) {
-							hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?JSON.parse(JSON.stringify(err)):null, res:res});
+						if (call.params[call.params.length-1]=="_t_callback") {
+							call.params[call.params.length-1] = function (err, res) {
+								hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?JSON.parse(JSON.stringify(err)):null, res:res});
+							};
 						};
 						lapi[call.func].apply(lapi,call.params);
 					});
@@ -197,9 +200,11 @@ module.exports.createApp = function (cfg, cb) {
 						apim[f]= function () {
 							var cb = arguments[arguments.length-1];
 							var args = safe.args.apply(0, arguments);
-							args[args.length-1]=null;
-							var rn = thisNode+(i++);
-							cbs[rn]=cb;
+							if (_.isFunction(cb)) {
+								args[args.length-1]="_t_callback";
+								var rn = thisNode+(i++);
+								cbs[rn]=cb;
+							}
 							hook.emit("tinyback::call::"+module.name,{node:thisNode, func:f, rn: rn, params:args});
 						};
 					});
@@ -316,15 +321,21 @@ module.exports.restapi = function () {
 
 module.exports.prefixify = function () {
 	return {
+		target:"local",
 		reqs:{router:false},
 		init:function (ctx,cb) {
-			cb(null, {api:require('./prefixify')});
+			var api = require('./prefixify');
+			// need to have confguration for backward compatibility
+			if (ctx.defs && ctx.defs.prefixify)
+				api.configure (ctx.defs.prefixify);
+			cb(null, {api:api});
 		}
 	};
 };
 
 module.exports.tson = function () {
 	return {
+		target:"local",
 		reqs:{router:false},
 		init:function (ctx,cb) {
 			cb(null, {api:require('./tson')});
@@ -334,6 +345,7 @@ module.exports.tson = function () {
 
 function _t_registry() {
 	return {
+		target:"local",
 		reqs:{router:false},
 		deps:[],
 		init:function (ctx,cb) {
@@ -364,6 +376,7 @@ module.exports._t_registry = _t_registry;
 
 module.exports.mongodb = function () {
 	return {
+		target:"local",
 		reqs:{router:false},
 		deps:['prefixify','_t_registry'],
 		init:function (ctx,cb) {
@@ -522,10 +535,14 @@ module.exports.obac = function () {
 							cb(null, answers.length==1?answers[0]:_.intersection.apply(_,answers));
 						}));
 					},
-					register:function(actions, module, face) {
+					register:function(actions, module, face, cb) {
 						_.each(actions, function (a) {
 							_acl.push({m:module, f:face, r:new RegExp(a.replace("*",".*"))});
 						});
+						if (!cb && !(ctx.defs.obac && ctx.defs.obac.registerStillSync))
+							throw new Error("obac.register should be async from now on or explicetly marked with defaults.obac.registerStillSync=true")
+						if (cb)
+							safe.back(cb);
 					},
 					getRegistered:function(t, p, cb){
 						cb(null, _.cloneDeep(_acl));
@@ -540,6 +557,7 @@ module.exports.validate = function () {
 	var updater = require("./updater.js");
 	var entries = {};
 	return {
+		target:"local",
 		reqs:{router:false},
 		init:function (ctx,cb) {
 			cb(null, {
@@ -592,6 +610,7 @@ module.exports.mongocache = function () {
 		return sKey;
 	};
 	return {
+		target:"local",
 		reqs:{router:false},
 		deps:["mongo"],
 		init:function (ctx,cb) {

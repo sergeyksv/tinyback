@@ -10,6 +10,8 @@
 		factory(_);
 	}
 }(function (_) {
+	// this is for backward compatibility, weird but required
+	var legacyBoolean = false;
 	var translate = {
 		"_i_": function (pr) {
 			pr = parseInt(pr);
@@ -42,9 +44,9 @@
 		},
 		"_b_": function (pr) {
 			if (pr === true || pr === 1 || pr === "true" || pr === "1")
-				return true;
+				return legacyBoolean?1:true;
 			if (pr === false || pr === 0 || pr === "false" || pr === "0" || pr === null || pr === "null")
-				return false;
+				return legacyBoolean?0:false;
 		}
 	};
 
@@ -132,6 +134,9 @@
 		sort:sortfix,
 		register:function (prefix, transform) {
 			translate[prefix]=transform;
+		},
+		configure:function (cfg) {
+			legacyBoolean = !!cfg.legacyBoolean;
 		}
 	};
 }));
