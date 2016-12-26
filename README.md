@@ -15,10 +15,27 @@ var cfg = {
 		{name: "cache", object: tinyback.mongocache()},
 		{name: "web", require: "./modules/web"}
 	],
+	defaults:{
+		module:{
+			reqs:{
+				router:true,
+				globalUse:true
+			}
+		}
+	},
 	config:{
 	}
 };
 ```
+Configuration object include following sections:
+* modules
+List modules that need to be initialized for application
+* defaults
+This section is created to provide backward compatibility behaviors. Ideally it should be empty which
+will means that application is adopted to modern version
+* config
+This section include specific application configuration.
+
 Later application can be initialized as:
 ```
 tinyback.createApp(cfg, safe.sure(cb, function (app) {
@@ -46,6 +63,9 @@ List of module dependencies. Module expect that application do have listed modul
 Array of supported module requirements
   * router=true|false, default false
   Module can declare if it want to have express route allocated to it or not
+	* globalUse=true|false, default false
+	Declares if module expect some legacy express.use modules to be called for router or not. New behavior for module is to apply
+	its own express use statements as required and do not rely on global ones.
 * init
 The only single module function that is used to initialization of module
 
