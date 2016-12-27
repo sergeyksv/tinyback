@@ -1,16 +1,20 @@
 {
   "name": "tinyback",
-  "version": "0.0.1",
+  "version": "2.0.1",
   "main": "./index.js",
   "dependencies": {
     "body-parser": "^1.15.1",
     "cookie-parser": "^1.4.3",
     "express": "^4.13.4",
     "lodash": "^4.8.0",
-    "lx-valid": "^1.2.0",
+    "lx-valid": "git://github.com/sergeyksv/lx-valid.git",
     "moment": "^2.13.0",
     "multer": "^1.1.0",
     "safe": "^0.3.9",
-    "tinyhook":"^0.2.0"
+    "tinyhook":"~0.2.2",
+    "amdefine":"^1.0.1",
+    "mongodb":"^2.0.0",
+    "http-proxy":"~1.16.2",
+    "compression":"^1.6.2"
   }
 }

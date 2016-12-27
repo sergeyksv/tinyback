@@ -63,12 +63,15 @@ module.exports.createApp = function (cfg, cb) {
 		req.setMaxListeners(20);
 		next();
 	});
-	app.use(require("compression")());
-	app.use(cookieParser());
-	app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
-	app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
-	app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
-	app.use(multer());
+	function instrumentExpress(app) {
+		app.use(require("compression")());
+		app.use(cookieParser());
+		app.use(bodyParser.json({ limit: cfg.config.app.postLimit || "20mb" }));
+		app.use(bodyParser.text({ limit: cfg.config.app.postLimit || "20mb" }));
+		app.use(bodyParser.raw({ limit: cfg.config.app.postLimit || "50mb" })); // to parse getsentry "application/octet-stream" requests
+		app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
+		app.use(multer({dest: '/tmp'}).any());
+	};
 	var api = {};
 	var locals = {};
 	var auto = {};
@@ -122,7 +125,7 @@ module.exports.createApp = function (cfg, cb) {
 			delete cbs[reply.rn];
 			var err = null;
 			if (reply.err) {
-				if (reply.err.name ==  "CustomError") {
+				if (reply.err.name ==  "CustomError" || reply.err.subject) {
 					err = new CustomError(reply.err.message, reply.err.subject)
 				}
 				else
@@ -131,15 +134,11 @@ module.exports.createApp = function (cfg, cb) {
 			cb(err, reply.res);
 		}
 	});
+	var defaults = cfg.defaults || {};
 
 	_.each(cfg.modules, function (module) {
 		registered[module.name]=1;
 		var mod = module.object || null;
-		// setting default value
-		if (!module.target || cfg.forceRootTarget)
-		 	module.target = "root";
-		// checkinng if this module is local to this node or not
-		var local = module.target == "local" || module.target == thisNode;
 		if (module.require) {
 			var mpath = module.require;
 			if (mpath.charAt(0)==".")
@@ -148,20 +147,30 @@ module.exports.createApp = function (cfg, cb) {
 		}
 		if (!mod)
 			return cb(new Error("Can't not load module " + module.name));
+		// setting default value
+		module.target = module.target || mod.target;
+		if (!module.target || cfg.forceRootTarget)
+		 	module.target = "root";
+		// checkinng if this module is local to this node or not
+		var local = module.target == "local" || module.target == thisNode;
 		var args = _.clone(module.deps || []);
 		args = _.union(mod.deps || [],args);
 		_.each(args, function (m) {
 			requested[m]=1;
 		});
+		var reqs = _.defaults(mod.reqs || {}, ((cfg.defaults || {}).module || {}).reqs || {}, {router:false, globalUse:false});
 		args.push(function (cb) {
 			var router = null;
-			if (!mod.reqs || mod.reqs.router!==false) {
+			if (reqs.router) {
 				router = express.Router();
 				app.use("/"+module.name,router);
 			}
 			var dt = new Date();
 			if (local) {
-				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,app:this,router:router}, safe.sure(cb, function (mobj) {
+				if (router && reqs.globalUse) {
+					instrumentExpress(router);
+				}
+				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,defs:(cfg.defaults || {}),app:this,router:router}, safe.sure(cb, function (mobj) {
 					if (!(module.target == 'local' && thisNode != 'root'))
 						console.log(thisNode + " loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
 					var lapi = api[module.name]=mobj.api;
@@ -169,8 +178,10 @@ module.exports.createApp = function (cfg, cb) {
 					hook.emit("tinyback::moduleschema::"+module.name,_.keys(mobj.api));
 					nodes[module.target]=1;
 					hook.on("*::tinyback::call::"+module.name, function (call) {
-						call.params[call.params.length-1] = function (err, res) {
-							hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?JSON.parse(JSON.stringify(err)):null, res:res});
+						if (call.params[call.params.length-1]=="_t_callback") {
+							call.params[call.params.length-1] = function (err, res) {
+								hook.emit("tinyback::reply::"+call.node,{rn:call.rn,err:err?JSON.parse(JSON.stringify(err)):null, res:res});
+							};
 						};
 						lapi[call.func].apply(lapi,call.params);
 					});
@@ -189,9 +200,11 @@ module.exports.createApp = function (cfg, cb) {
 						apim[f]= function () {
 							var cb = arguments[arguments.length-1];
 							var args = safe.args.apply(0, arguments);
-							args[args.length-1]=null;
-							var rn = thisNode+(i++);
-							cbs[rn]=cb;
+							if (_.isFunction(cb)) {
+								args[args.length-1]="_t_callback";
+								var rn = thisNode+(i++);
+								cbs[rn]=cb;
+							}
 							hook.emit("tinyback::call::"+module.name,{node:thisNode, func:f, rn: rn, params:args});
 						};
 					});
@@ -236,27 +249,48 @@ module.exports.restapi = function () {
 				if (ctx.locals.newrelic)
 					ctx.locals.newrelic.setTransactionName(req.method+"/"+(req.params.token=="public"?"public":"token")+"/"+req.params.module+"/"+req.params.target);
 				var next = function (err) {
-					var statusMap = {"Unauthorized":401,"Access forbidden":403,"Invalid Data":422};
+					var statusMap = {"Unauthorized":401,"Access forbidden":403,"Invalid Data":422,"Not Found":404};
 					var code = statusMap[err.subject] || 500;
 					res.status(code).json(_.pick(err,['message','subject','data']));
 				};
-				if (!ctx.api[req.params.module])
-					throw new Error("No api module available");
-				if (!ctx.api[req.params.module][req.params.target])
-					throw new Error("No function available");
+				/* for security purposes it is required to white list modules that are exposed through api
+				 the reason is that not all module do check permissions and in general are allowed for external callbacks
+				 for backward compatibility it is ok to make empty restapi section with no restapi.modules defined.
+				 Example of configuration:
+				 restapi: {
+					 modules:{"statistics":1,"users":1,"web":1,
+						 "obac":{blacklist:{"register":1}},
+						 "email":{whitelist:{"getSendingStatuses":1}}}
+				 }
+				 */
+				if (!ctx.cfg.restapi)
+					return next(new Error("Explicit configuration of restapi.modules is required"));
 
-				var params = (req.method == 'POST')?req.body:req.query;
+				// check if module is exist and it is whitelisted
+				if (!ctx.api[req.params.module] || (ctx.cfg.restapi.modules && !ctx.cfg.restapi.modules[req.params.module]))
+					return next(new CustomError("No api module available","Not Found"));
+				var modCfg = ctx.cfg.restapi.modules && ctx.cfg.restapi.modules[req.params.module];
+				// check if function is exist
+				if ((!ctx.api[req.params.module][req.params.target]) ||
+						// and it is specific function is either white or black listed
+						(_.isObject(modCfg) && (
+								(modCfg.blacklist && modCfg.blacklist[req.params.target]) ||
+								(modCfg.whilelist && !modCfg.whitelist[req.params.target]))))
+					return next(new CustomError("No function available", "Not Found"));
+
+				var params = req.method == 'POST'?req.body:req.query;
+				if(params._t_jsonq)
+					params = JSON.parse(params._t_jsonq)
 
 				if (params._t_son=='in' || params._t_son=='both')
 					params = ctx.api.tson.decode(params);
-
 				ctx.api[req.params.module][req.params.target](req.params.token, params, safe.sure(next, function (result) {
 					if (params._t_son=='out' || params._t_son=='both')
 						result = ctx.api.tson.encode(result);
 
 					var maxAge = 0;
-					if (req.query._t_age) {
-						var age = req.query._t_age;
+					if (params._t_age) {
+						var age = params._t_age;
 						var s = age.match(/(\d+)s?$/); s = s?parseInt(s[1]):0;
 						var m = age.match(/(\d+)m/); m = m?parseInt(m[1]):0;
 						var h = age.match(/(\d+)h/); h = h?parseInt(h[1]):0;
@@ -287,15 +321,21 @@ module.exports.restapi = function () {
 
 module.exports.prefixify = function () {
 	return {
+		target:"local",
 		reqs:{router:false},
 		init:function (ctx,cb) {
-			cb(null, {api:require('./prefixify')});
+			var api = require('./prefixify');
+			// need to have confguration for backward compatibility
+			if (ctx.defs && ctx.defs.prefixify)
+				api.configure (ctx.defs.prefixify);
+			cb(null, {api:api});
 		}
 	};
 };
 
 module.exports.tson = function () {
 	return {
+		target:"local",
 		reqs:{router:false},
 		init:function (ctx,cb) {
 			cb(null, {api:require('./tson')});
@@ -305,6 +345,7 @@ module.exports.tson = function () {
 
 function _t_registry() {
 	return {
+		target:"local",
 		reqs:{router:false},
 		deps:[],
 		init:function (ctx,cb) {
@@ -335,6 +376,7 @@ module.exports._t_registry = _t_registry;
 
 module.exports.mongodb = function () {
 	return {
+		target:"local",
 		reqs:{router:false},
 		deps:['prefixify','_t_registry'],
 		init:function (ctx,cb) {
@@ -354,23 +396,30 @@ module.exports.mongodb = function () {
 						if (!cfg)
 							return safe.back(cb, new Error("No mongodb database for alias "+name));
 
-						var dbc = new mongo.Db(
-							cfg.db,
-							new mongo.Server(
-								cfg.host,
-								cfg.port,
-								cfg.scfg
-							),
-							cfg.ccfg
-						);
-						dbc.open(safe.sure(cb, function (db) {
-							dbcache[name]=db;
-							if(!cfg.auth)
-								return cb(null,db);
-							db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+						if (cfg.url) {
+							mongo.MongoClient.connect(cfg.url, {db:cfg.ccfg||{},server:cfg.scfg||{},replSet:cfg.rcfg||{},mongos:cfg.mcfg||{}}, safe.sure(cb, function (db) {
+								dbcache[name]=db;
 								cb(null,db);
+							}))
+						} else {
+							var dbc = new mongo.Db(
+								cfg.db,
+								new mongo.Server(
+									cfg.host,
+									cfg.port,
+									cfg.scfg
+								),
+								cfg.ccfg
+							);
+							dbc.open(safe.sure(cb, function (db) {
+								dbcache[name]=db;
+								if(!cfg.auth)
+									return cb(null,db);
+								db.authenticate(cfg.auth.user,cfg.auth.pwd,cfg.auth.options,safe.sure(cb,function(){
+									cb(null,db);
+								}));
 							}));
-						}));
+						}
 					},
 					ensureIndex:function (col, index, options, cb) {
 						if (_.isFunction(options)) {
@@ -486,10 +535,17 @@ module.exports.obac = function () {
 							cb(null, answers.length==1?answers[0]:_.intersection.apply(_,answers));
 						}));
 					},
-					register:function(actions, module, face) {
+					register:function(actions, module, face, cb) {
 						_.each(actions, function (a) {
 							_acl.push({m:module, f:face, r:new RegExp(a.replace("*",".*"))});
 						});
+						if (!cb && !(ctx.defs.obac && ctx.defs.obac.registerStillSync))
+							throw new Error("obac.register should be async from now on or explicetly marked with defaults.obac.registerStillSync=true")
+						if (cb)
+							safe.back(cb);
+					},
+					getRegistered:function(t, p, cb){
+						cb(null, _.cloneDeep(_acl));
 					}
 				}
 			});
@@ -501,6 +557,7 @@ module.exports.validate = function () {
 	var updater = require("./updater.js");
 	var entries = {};
 	return {
+		target:"local",
 		reqs:{router:false},
 		init:function (ctx,cb) {
 			cb(null, {
@@ -543,17 +600,17 @@ module.exports.validate = function () {
 
 module.exports.mongocache = function () {
 	var entries = {};
-	var md5sum;
 	var safeKey = function (key) {
 		var sKey = key.toString();
 		if (sKey.length>512) {
-			md5sum = crypto.createHash('md5');
+			var md5sum = crypto.createHash('md5');
 			md5sum.update(sKey);
 			sKey = md5sum.digest('hex');
 		}
 		return sKey;
 	};
 	return {
+		target:"local",
 		reqs:{router:false},
 		deps:["mongo"],
 		init:function (ctx,cb) {
