@@ -52,7 +52,7 @@
 
 	function sortfix(obj) {
 		var nobj = {};
-		_.each(obj, function (v, k) {
+		_.forOwn(obj, function (v, k) {
 			nobj[k] = parseInt(v);
 		});
 		return nobj;
@@ -61,7 +61,7 @@
 	function queryfix(obj, opts) {
 		if (!obj) return null;
 		var nobj = {};
-		_.each(obj, function (v, k) {
+		_.forOwn(obj, function (v, k) {
 			// query can use dot notation for names
 			// last component should refer to actual type
 			var prefix = k.match(/(_..).*$/);
@@ -72,11 +72,11 @@
 				// object meand op, like {$gt:5,$lt:8}
 				if (_.isPlainObject(v)) {
 					var no = {};
-					_.each(v, function (val, op) {
+					_.forOwn(v, function (val, op) {
 						// op value is array {$in:[1,2,4]}
 						if (_.isArray(val)) {
 							var na = [];
-							_.each(val, function (a) {
+							_.forOwn(val, function (a) {
 								_.attempt(function () { na.push(translate[prefix](a)); });
 							});
 							no[op]=na;
@@ -102,7 +102,7 @@
 	function datafix(obj,opts) {
 		var nobj = obj;
 
-		_.each(obj, function (v, k) {
+		_.forOwn(obj, function (v, k) {
 			if (_.isFunction(v) || _.isUndefined(v))
 				return;
 
