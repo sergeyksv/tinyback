@@ -11,6 +11,10 @@ challenges that it is supposed to solve are following:
 * Be an effective companion for Tiny(back)Bone dual rendering front-end library
 * Provide standard modules for basic demands (db access, permission control, data validation)
 
+For example application please please see:
+* https://github.com/sergeyksv/tinyapp-bootstrap
+* https://github.com/sergeyksv/tinelic
+
 ## Application bootstrapping
 
 TinyBack is responsible for initialization of application. Essentially for loading all modules according to dependencies and parameters and bringing back fully configured express app.
