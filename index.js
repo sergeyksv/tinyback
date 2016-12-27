@@ -63,6 +63,7 @@ module.exports.createApp = function (cfg, cb) {
 		req.setMaxListeners(20);
 		next();
 	});
+
 	function instrumentExpress(app) {
 		app.use(require("compression")());
 		app.use(cookieParser());
@@ -72,6 +73,7 @@ module.exports.createApp = function (cfg, cb) {
 		app.use(bodyParser.urlencoded({ extended: true, limit: cfg.config.app.postLimit || "20mb"}));
 		app.use(multer({dest: '/tmp'}).any());
 	};
+
 	var api = {};
 	var locals = {};
 	var auto = {};
