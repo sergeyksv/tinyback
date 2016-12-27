@@ -164,12 +164,12 @@ module.exports.createApp = function (cfg, cb) {
 			if (reqs.router) {
 				router = express.Router();
 				app.use("/"+module.name,router);
-				if (reqs.globalUse) {
-					instrumentExpress(router);
-				}
 			}
 			var dt = new Date();
 			if (local) {
+				if (router && reqs.globalUse) {
+					instrumentExpress(router);
+				}
 				mod.init({target:thisNode, api:api,locals:locals,cfg:cfg.config,defs:(cfg.defaults || {}),app:this,router:router}, safe.sure(cb, function (mobj) {
 					if (!(module.target == 'local' && thisNode != 'root'))
 						console.log(thisNode + " loaded "+ module.name + " in "+((new Date()).valueOf()-dt.valueOf())/1000.0+" s");
